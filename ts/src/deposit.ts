@@ -78,8 +78,8 @@ async function adminUsdtDeposit() {
         const targetUsers = [
             {
                 name: "Investor1",
-                pid1: process.env.TARGET_PID1_1 ? BigInt(process.env.TARGET_PID1_1) : 5348190334671897916n,
-                pid2: process.env.TARGET_PID1_2 ? BigInt(process.env.TARGET_PID1_2) : 5390252838300668481n,
+                pid1: 12786766863055778281n,
+                pid2: 2343044793251954278n,
                 amount: 1000000000000n // 1M USDT (6 decimals)
             },
         ];

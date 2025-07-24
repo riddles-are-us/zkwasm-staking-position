@@ -194,7 +194,7 @@ async function logPlayerState(userKey: string, stepDescription: string) {
             effectivePoints
         };
         
-    } catch (error) {
+        } catch (error) {
         console.error("Error querying blockchain state:", error);
         return null;
     }
