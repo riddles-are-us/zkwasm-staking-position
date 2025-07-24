@@ -2,7 +2,7 @@ name: CI/CD Pipeline
 
 on:
   push:
-    branches: [ main, multi-market ]
+    branches: [ main]
     tags: [ 'v*' ]
 
 env:
