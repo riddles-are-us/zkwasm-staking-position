@@ -67,10 +67,15 @@ impl PlayerData {
         Ok(())
     }
 
-    /// Remove stake amount
+    /// Remove stake amount (without updating last_stake_time)
     pub fn remove_stake(&mut self, amount: u64, current_time: u64) -> Result<(), u32> {
-        // Update points first (calculate interest)
-        self.update_points_with_interest(current_time)?;
+        // Update points first (calculate interest), but don't update last_stake_time
+        if self.last_stake_time > 0 && current_time > self.last_stake_time {
+            let delta_time = safe_sub(current_time, self.last_stake_time)?;
+            let interest_points = safe_mul(self.total_staked, delta_time)?;
+            self.points = safe_add(self.points, interest_points)?;
+            // Note: We don't update last_stake_time here, keeping the original stake time
+        }
         
         // Check if there's enough staked amount
         if self.total_staked < amount {

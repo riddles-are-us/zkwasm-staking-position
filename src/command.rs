@@ -4,6 +4,7 @@ use crate::player::StakingPlayer;
 use crate::math_safe::{safe_add, safe_sub};
 use zkwasm_rest_abi::WithdrawInfo;
 use crate::settlement::SettlementInfo;
+use crate::config::TICKS_PER_WEEK;
 
 #[derive(Clone)]
 pub enum Command {
@@ -36,6 +37,11 @@ impl CommandHandler for Withdraw {
                 // Check if user has enough staked amount to withdraw
                 if player.data.total_staked < amount {
                     return Err(ERROR_INSUFFICIENT_STAKE);
+                }
+
+                // Check if 7 days have passed since last stake time (7 days = 120960 counters)
+                if player.data.last_stake_time > 0 && counter < player.data.last_stake_time + TICKS_PER_WEEK {
+                    return Err(ERROR_WITHDRAW_TOO_EARLY);
                 }
 
                 // Update points first (calculate interest), then reduce stake
@@ -100,6 +106,7 @@ pub fn decode_error(e: u32) -> &'static str {
         ERROR_STAKE_TOO_SMALL => "StakeTooSmall",
         ERROR_STAKE_TOO_LARGE => "StakeTooLarge",
         ERROR_NO_STAKE_TO_WITHDRAW => "NoStakeToWithdraw",
+        ERROR_WITHDRAW_TOO_EARLY => "WithdrawTooEarly",
         ERROR_OVERFLOW => "MathOverflow",
         ERROR_UNDERFLOW => "MathUnderflow",
         ERROR_DIVISION_BY_ZERO => "DivisionByZero",
