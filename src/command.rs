@@ -1,15 +1,16 @@
 use crate::error::*;
 use crate::state::GLOBAL_STATE;
 use crate::player::StakingPlayer;
-use crate::math_safe::{safe_add, safe_sub};
+use crate::math_safe::{safe_add, safe_sub, safe_mul};
 use zkwasm_rest_abi::WithdrawInfo;
 use crate::settlement::SettlementInfo;
-use crate::config::TICKS_PER_WEEK;
+use crate::config::{TICKS_PER_WEEK, POINTS_PER_USDT, MIN_USDT_EXCHANGE};
 
 #[derive(Clone)]
 pub enum Command {
     // Standard withdraw and deposit  
     Withdraw(Withdraw),
+    WithdrawUsdt(WithdrawUsdt),
     Deposit(Deposit),
     // Standard player install and timer
     InstallPlayer,
@@ -52,6 +53,55 @@ impl CommandHandler for Withdraw {
                 state.total_staked = safe_sub(state.total_staked, amount)?;
                 
                 let withdrawinfo = WithdrawInfo::new(&[self.data[0], self.data[1], self.data[2]], 0);
+                SettlementInfo::append_settlement(withdrawinfo);
+                player.store();
+
+                Ok(())
+            }
+        }
+    }
+}
+
+#[derive(Clone)]
+pub struct WithdrawUsdt {
+    pub data: [u64; 3],
+}
+
+impl CommandHandler for WithdrawUsdt {
+    fn handle(&self, pid: &[u64; 2], nonce: u64, _rand: &[u64; 4], counter: u64) -> Result<(), u32> {
+        let mut player = StakingPlayer::get_from_pid(pid);
+        match player.as_mut() {
+            None => Err(ERROR_PLAYER_NOT_EXIST),
+            Some(player) => {
+                player.check_and_inc_nonce(nonce);
+                let usdt_amount = self.data[0] & 0xffffffff;
+
+                // Validate USDT amount
+                if usdt_amount == 0 {
+                    return Err(ERROR_INVALID_USDT_AMOUNT);
+                }
+                
+                if usdt_amount < MIN_USDT_EXCHANGE {
+                    return Err(ERROR_USDT_AMOUNT_TOO_SMALL);
+                }
+
+                // Calculate required points for the USDT amount
+                let required_points = safe_mul(usdt_amount, POINTS_PER_USDT)?;
+                
+                // Calculate current effective points (including interest)
+                let current_points = player.data.calculate_effective_points(counter)?;
+                
+                // Check if user has enough points
+                if current_points < required_points {
+                    return Err(ERROR_INSUFFICIENT_POINTS);
+                }
+
+                // Update points with interest but don't change last_stake_time (for USDT exchange)
+                player.data.update_points(counter)?;       
+                player.data.points = safe_sub(player.data.points, required_points)?;
+                
+                // Create withdrawal info with token index 1 for USDT (different from normal token index 0)
+                let withdrawinfo = WithdrawInfo::new(&[self.data[0], self.data[1], self.data[2]], 1);
                 SettlementInfo::append_settlement(withdrawinfo);
                 player.store();
 
@@ -110,6 +160,9 @@ pub fn decode_error(e: u32) -> &'static str {
         ERROR_OVERFLOW => "MathOverflow",
         ERROR_UNDERFLOW => "MathUnderflow",
         ERROR_DIVISION_BY_ZERO => "DivisionByZero",
+        ERROR_INSUFFICIENT_POINTS => "InsufficientPoints",
+        ERROR_INVALID_USDT_AMOUNT => "InvalidUsdtAmount",
+        ERROR_USDT_AMOUNT_TOO_SMALL => "UsdtAmountTooSmall",
         _ => "Unknown",
     }
 } 
