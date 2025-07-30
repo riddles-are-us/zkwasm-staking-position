@@ -19,4 +19,8 @@ pub const ERROR_WITHDRAW_TOO_EARLY: u32 = 26;
 // USDT exchange errors (30-40)
 pub const ERROR_INSUFFICIENT_POINTS: u32 = 31;
 pub const ERROR_INVALID_USDT_AMOUNT: u32 = 32;
-pub const ERROR_USDT_AMOUNT_TOO_SMALL: u32 = 33; 
+pub const ERROR_USDT_AMOUNT_TOO_SMALL: u32 = 33;
+
+// Points withdrawal errors (40-50)
+pub const ERROR_INVALID_POINTS_AMOUNT: u32 = 41;
+pub const ERROR_POINTS_AMOUNT_TOO_SMALL: u32 = 42; 

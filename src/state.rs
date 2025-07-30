@@ -127,6 +127,7 @@ const INSTALL_PLAYER: u64 = 1;
 const WITHDRAW: u64 = 2;
 const DEPOSIT: u64 = 3;
 const WITHDRAW_USDT: u64 = 4;
+const WITHDRAW_POINTS: u64 = 5;
 
 pub struct Transaction {
     command: crate::command::Command,
@@ -139,7 +140,7 @@ impl Transaction {
     }
 
     pub fn decode(params: &[u64]) -> Self {
-        use crate::command::{Command, Deposit, Withdraw, WithdrawUsdt};
+        use crate::command::{Command, Deposit, Withdraw, WithdrawUsdt, WithdrawPoints};
         use zkwasm_rest_abi::enforce;
         
         let command = params[0] & 0xff;
@@ -153,6 +154,11 @@ impl Transaction {
         } else if command == WITHDRAW_USDT {
             enforce(params.len() == 5, "withdraw_usdt needs 5 params");
             Command::WithdrawUsdt(WithdrawUsdt {
+                data: [params[2], params[3], params[4]]
+            })
+        } else if command == WITHDRAW_POINTS {
+            enforce(params.len() == 5, "withdraw_points needs 5 params");
+            Command::WithdrawPoints(WithdrawPoints {
                 data: [params[2], params[3], params[4]]
             })
         } else if command == DEPOSIT {
@@ -224,6 +230,9 @@ impl Transaction {
             }
             Command::WithdrawUsdt(withdraw_usdt) => {
                 withdraw_usdt.handle(&pid, self.nonce, rand, counter).map_or_else(|e| e, |_| 0)
+            }
+            Command::WithdrawPoints(withdraw_points) => {
+                withdraw_points.handle(&pid, self.nonce, rand, counter).map_or_else(|e| e, |_| 0)
             }
             Command::Deposit(deposit) => {
                 unsafe { require(*pkey == *ADMIN_PUBKEY) };

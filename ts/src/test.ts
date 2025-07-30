@@ -19,6 +19,8 @@ const rpc = new ZKWasmAppRpc("http://127.0.0.1:3000");
 const INSTALL_PLAYER = 1;
 const WITHDRAW = 2;
 const DEPOSIT = 3;
+const WITHDRAW_USDT = 4;
+const WITHDRAW_POINTS = 5;
 
 // Create Player classes for staking
 class StakingTestPlayer extends PlayerConvention {
@@ -57,6 +59,13 @@ class StakingTestPlayer extends PlayerConvention {
         let nonce = await this.getNonce();
         // Use createWithdrawCommand from zkwasm-minirollup-rpc
         let cmd = createWithdrawCommand(nonce, BigInt(WITHDRAW), address, 0n, amount);
+        return await this.sendTransactionWithCommand(cmd);
+    }
+
+    async withdrawPoints(pointsAmount: bigint, address: string = "1234567890123456789012345678901234567890") {
+        let nonce = await this.getNonce();
+        // Use createWithdrawCommand from zkwasm-minirollup-rpc with token index 2 for points
+        let cmd = createWithdrawCommand(nonce, BigInt(WITHDRAW_POINTS), address, 2n, pointsAmount);
         return await this.sendTransactionWithCommand(cmd);
     }
 

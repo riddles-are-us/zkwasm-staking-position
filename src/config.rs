@@ -10,13 +10,13 @@ lazy_static::lazy_static! {
 
 #[derive(Serialize, Clone)]
 pub struct Config {
-    actions: [&'static str; 3],
+    actions: [&'static str; 4],
     name: [&'static str; 1],
 }
 
 lazy_static::lazy_static! {
     pub static ref CONFIG: Config = Config {
-        actions: ["deposit", "withdraw", "withdraw_usdt"],
+        actions: ["deposit", "withdraw", "withdraw_usdt", "withdraw_points"],
         name: ["zkwasm_staking"],
     };
 }
@@ -39,6 +39,11 @@ pub const MAX_STAKE_AMOUNT: u64 = 1_000_000_000; // Maximum stake amount
 // 10w (100,000) * 17280 (ticks per day) = 1,728,000,000 points = 1 USDT
 pub const POINTS_PER_USDT: u64 = 1_728_000_000; // 10w * 17280
 pub const MIN_USDT_EXCHANGE: u64 = 1; // Minimum 1 USDT exchange
+
+// Points withdrawal constants
+// Points are divided by 17280 when withdrawing (same as USDT exchange)
+pub const POINTS_DIVISOR: u64 = 17280;
+pub const MIN_POINTS_WITHDRAWAL: u64 = 17280; // Minimum 1 effective point withdrawal
 
 // Time conversion helpers (5 seconds per tick)
 pub const SECONDS_PER_TICK: u64 = 5;
