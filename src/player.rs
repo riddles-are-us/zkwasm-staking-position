@@ -6,7 +6,8 @@ use crate::math_safe::{safe_add, safe_sub, safe_mul};
 #[derive(Serialize, Clone, Debug, Default)]
 pub struct PlayerData {
     pub points: u64,           // User points/score
-    pub last_stake_time: u64,  // Last stake timestamp
+    pub last_stake_time: u64,  // Last stake timestamp (for withdrawal time restriction)
+    pub last_update_time: u64, // Last points update timestamp (for interest calculation)
     pub total_staked: u64,     // Total staked amount
 }
 
@@ -30,28 +31,46 @@ impl PlayerData {
         PlayerData {
             points: 0,
             last_stake_time: 0,
+            last_update_time: 0,
             total_staked: 0,
         }
     }
 
     /// Calculate effective points = points + current_staked_amount * delta_time
     pub fn calculate_effective_points(&self, current_time: u64) -> Result<u64, u32> {
-        if self.last_stake_time == 0 || current_time <= self.last_stake_time {
+        // Use last_update_time for interest calculation, not last_stake_time
+        let reference_time = if self.last_update_time > 0 {
+            self.last_update_time
+        } else {
+            self.last_stake_time
+        };
+        
+        if reference_time == 0 || current_time <= reference_time {
             return Ok(self.points);
         }
         
-        let delta_time = safe_sub(current_time, self.last_stake_time)?;
+        let delta_time = safe_sub(current_time, reference_time)?;
         let interest_points = safe_mul(self.total_staked, delta_time)?;
         safe_add(self.points, interest_points)
     }
 
     /// Update points with interest calculation
     pub fn update_points(&mut self, current_time: u64) -> Result<(), u32> {
-        if self.last_stake_time > 0 && current_time > self.last_stake_time {
-            let delta_time = safe_sub(current_time, self.last_stake_time)?;
+        // Use last_update_time for interest calculation, not last_stake_time
+        let reference_time = if self.last_update_time > 0 {
+            self.last_update_time
+        } else {
+            self.last_stake_time
+        };
+        
+        if reference_time > 0 && current_time > reference_time {
+            let delta_time = safe_sub(current_time, reference_time)?;
             let interest_points = safe_mul(self.total_staked, delta_time)?;
             self.points = safe_add(self.points, interest_points)?;
         }
+        
+        // Update the last_update_time to current_time to prevent double counting
+        self.last_update_time = current_time;
         Ok(())
     }
 
@@ -63,8 +82,9 @@ impl PlayerData {
         // Add stake amount
         self.total_staked = safe_add(self.total_staked, amount)?;
         
-        // Update stake time
+        // Update both stake time and update time
         self.last_stake_time = current_time;
+        self.last_update_time = current_time;
         
         Ok(())
     }
@@ -92,6 +112,7 @@ impl StorageData for PlayerData {
         PlayerData {
             points: *u64data.next().unwrap(),
             last_stake_time: *u64data.next().unwrap(),
+            last_update_time: *u64data.next().unwrap(),
             total_staked: *u64data.next().unwrap(),
         }
     }
@@ -99,6 +120,7 @@ impl StorageData for PlayerData {
     fn to_data(&self, data: &mut Vec<u64>) {
         data.push(self.points);
         data.push(self.last_stake_time);
+        data.push(self.last_update_time);
         data.push(self.total_staked);
     }
 }

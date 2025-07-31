@@ -43,7 +43,7 @@ pub const MIN_USDT_EXCHANGE: u64 = 1; // Minimum 1 USDT exchange
 // Points withdrawal constants
 // Points are divided by 17280 when withdrawing (same as USDT exchange)
 pub const POINTS_DIVISOR: u64 = 17280;
-pub const MIN_POINTS_WITHDRAWAL: u64 = 17280; // Minimum 1 effective point withdrawal
+pub const MIN_POINTS_WITHDRAWAL: u64 = 1; // Minimum 1 effective point withdrawal (will require 17280 actual points)
 
 // Time conversion helpers (5 seconds per tick)
 pub const SECONDS_PER_TICK: u64 = 5;
