@@ -7,8 +7,8 @@ use crate::math_safe::{safe_add, safe_sub, safe_mul};
 pub struct PlayerData {
     pub points: u64,           // User points/score
     pub last_stake_time: u64,  // Last stake timestamp (for withdrawal time restriction)
-    pub last_update_time: u64, // Last points update timestamp (for interest calculation)
     pub total_staked: u64,     // Total staked amount
+    pub last_update_time: u64, // Last points update timestamp (for interest calculation)
 }
 
 pub trait Owner: Sized {
@@ -112,16 +112,16 @@ impl StorageData for PlayerData {
         PlayerData {
             points: *u64data.next().unwrap(),
             last_stake_time: *u64data.next().unwrap(),
-            last_update_time: *u64data.next().unwrap(),
             total_staked: *u64data.next().unwrap(),
+            last_update_time: u64data.next().map_or(0, |x| *x), 
         }
     }
 
     fn to_data(&self, data: &mut Vec<u64>) {
         data.push(self.points);
         data.push(self.last_stake_time);
-        data.push(self.last_update_time);
         data.push(self.total_staked);
+        data.push(self.last_update_time);
     }
 }
 
