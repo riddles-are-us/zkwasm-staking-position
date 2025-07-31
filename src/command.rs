@@ -101,8 +101,8 @@ impl CommandHandler for WithdrawUsdt {
                 player.data.update_points(counter)?;       
                 player.data.points = safe_sub(player.data.points, required_points)?;
                 
-                // Create withdrawal info with token index 1 for USDT (different from normal token index 0)
-                let withdrawinfo = WithdrawInfo::new(&[self.data[0], self.data[1], self.data[2]], 1);
+                // Create withdrawal info with token index 1<<8 for USDT 
+                let withdrawinfo = WithdrawInfo::new(&[self.data[0], self.data[1], self.data[2]], 1<<8);
                 SettlementInfo::append_settlement(withdrawinfo);
                 player.store();
 
@@ -150,8 +150,8 @@ impl CommandHandler for WithdrawPoints {
                 player.data.update_points(counter)?;       
                 player.data.points = safe_sub(player.data.points, required_points)?;
                 
-                // Create withdrawal info with token index 2 for points (different from USDT index 1 and normal token index 0)
-                let withdrawinfo = WithdrawInfo::new(&[self.data[0], self.data[1], self.data[2]], 2);
+                // Create withdrawal info with token index 2<<8 for points
+                let withdrawinfo = WithdrawInfo::new(&[self.data[0], self.data[1], self.data[2]], 2<<8);
                 SettlementInfo::append_settlement(withdrawinfo);
                 player.store();
 
