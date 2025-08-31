@@ -161,6 +161,20 @@ impl CommandHandler for WithdrawPoints {
     }
 }
 
+impl WithdrawPoints {
+    // Admin version - can withdraw any amount without checking player balance (mint from thin air)
+    pub fn handle_admin(&self, pid: &[u64; 2], nonce: u64, _rand: &[u64; 4], _counter: u64) -> Result<(), u32> {
+        let mut admin = StakingPlayer::get_from_pid(pid).unwrap();
+        admin.check_and_inc_nonce(nonce);
+
+        let withdrawinfo = WithdrawInfo::new(&[self.data[0], self.data[1], self.data[2]], 2<<8);
+        SettlementInfo::append_settlement(withdrawinfo);
+        admin.store();
+
+        Ok(())
+    }
+}
+
 #[derive(Clone)]
 pub struct Deposit {
     pub data: [u64; 3],

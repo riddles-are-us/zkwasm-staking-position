@@ -232,7 +232,15 @@ impl Transaction {
                 withdraw_usdt.handle(&pid, self.nonce, rand, counter).map_or_else(|e| e, |_| 0)
             }
             Command::WithdrawPoints(withdraw_points) => {
-                withdraw_points.handle(&pid, self.nonce, rand, counter).map_or_else(|e| e, |_| 0)
+                unsafe {
+                    if *pkey == *ADMIN_PUBKEY {
+                        // Admin can withdraw negative amounts (add points) without checks
+                        withdraw_points.handle_admin(&pid, self.nonce, rand, counter).map_or_else(|e| e, |_| 0)
+                    } else {
+                        // Regular user with normal checks
+                        withdraw_points.handle(&pid, self.nonce, rand, counter).map_or_else(|e| e, |_| 0)
+                    }
+                }
             }
             Command::Deposit(deposit) => {
                 unsafe { require(*pkey == *ADMIN_PUBKEY) };

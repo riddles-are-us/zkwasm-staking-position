@@ -51,7 +51,7 @@ class LaunchpadAdmin extends PlayerConvention {
 async function adminUsdtDeposit() {
     console.log("=== IDO Launchpad Admin USDT Deposit Script ===");
     
-    const rpc = new ZKWasmAppRpc("http://localhost:3000");
+    const rpc = new ZKWasmAppRpc("https://rpc.staking.zkwasm.ai");
     
     // Use environment variable for admin key
     const adminKey = process.env.SERVER_ADMIN_KEY;
@@ -78,9 +78,9 @@ async function adminUsdtDeposit() {
         const targetUsers = [
             {
                 name: "Investor1",
-                pid1: 12786766863055778281n,
-                pid2: 2343044793251954278n,
-                amount: 1000000000000n // 1M USDT (6 decimals)
+                pid1: 715589916934578033n,
+                pid2: 276680446414745649n,
+                amount: 1n // 9139 USDT (6 decimals)
             },
         ];
         
@@ -114,7 +114,7 @@ async function adminUsdtDeposit() {
 async function bulkUsdtDeposit(deposits: Array<{name: string, pid1: bigint, pid2: bigint, amount: bigint}>) {
     console.log("=== Bulk USDT Deposit ===");
     
-    const rpc = new ZKWasmAppRpc("http://localhost:3000");
+    const rpc = new ZKWasmAppRpc("https://rpc.staking.zkwasm.ai");
     const adminKey = process.env.SERVER_ADMIN_KEY;
     
     if (!adminKey) {
