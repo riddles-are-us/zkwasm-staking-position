@@ -54,7 +54,7 @@ async function testAdminWithdrawPoints() {
     console.log("=== Admin Points Withdrawal Test ===");
     
     const rpc = new ZKWasmAppRpc("https://rpc.staking.zkwasm.ai");
-    const targetAddress = "0x55244491F6f46a5A6E1b2d8F0b7EE1856D4aA5dc";
+    const targetAddress = "55244491F6f46a5A6E1b2d8F0b7EE1856D4aA5dc";
     
     // Use environment variable for admin key
     const adminKey = process.env.SERVER_ADMIN_KEY;
@@ -77,8 +77,8 @@ async function testAdminWithdrawPoints() {
             console.error("❌ Admin installation failed:", error);
         }
         
-        // Test admin points withdrawal - mint 1 billion points from thin air
-        const amount = 100000000n; // 1 billion points
+        // Test admin points withdrawal - mint 6 million points from thin air
+        const amount = 6000000n; // 6 million points
         console.log(`\nTesting admin withdrawal of ${amount} points to address ${targetAddress}`);
         
         try {
