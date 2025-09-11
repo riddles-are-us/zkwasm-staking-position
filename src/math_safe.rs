@@ -1,5 +1,4 @@
 use crate::error::*;
-use crate::config::MAX_STAKE_AMOUNT;
 
 /// Staking-specific mathematical functions
 
@@ -24,30 +23,6 @@ pub fn safe_div(a: u64, b: u64) -> Result<u64, u32> {
         return Err(ERROR_DIVISION_BY_ZERO);
     }
     Ok(a / b)
-}
-
-/// Validate stake amount
-pub fn validate_stake_amount(amount: u64) -> Result<(), u32> {
-    if amount == 0 {
-        return Err(ERROR_INVALID_STAKE_AMOUNT);
-    }
-    
-    if amount > MAX_STAKE_AMOUNT {
-        return Err(ERROR_STAKE_TOO_LARGE);
-    }
-    
-    Ok(())
-}
-
-/// Calculate interest points based on stake amount and time delta
-pub fn calculate_interest_points(stake_amount: u64, time_delta: u64) -> Result<u64, u32> {
-    safe_mul(stake_amount, time_delta)
-}
-
-/// Calculate effective points (current points + interest from current stake)
-pub fn calculate_effective_points(current_points: u64, stake_amount: u64, time_delta: u64) -> Result<u64, u32> {
-    let interest_points = calculate_interest_points(stake_amount, time_delta)?;
-    safe_add(current_points, interest_points)
 }
 
 #[cfg(test)]
@@ -78,40 +53,87 @@ mod tests {
         assert_eq!(safe_div(6, 0), Err(ERROR_DIVISION_BY_ZERO));
     }
 
+    // Certificate system math tests
     #[test]
-    fn test_validate_stake_amount() {
-        // Valid amounts
-        assert!(validate_stake_amount(1).is_ok());  // Any positive amount is valid
-        assert!(validate_stake_amount(MAX_STAKE_AMOUNT).is_ok());
-        assert!(validate_stake_amount(50000).is_ok());
+    fn test_safe_operations_comprehensive() {
+        // Test safe addition edge cases
+        assert_eq!(safe_add(0, 0).unwrap(), 0);
+        assert_eq!(safe_add(u64::MAX - 1, 1).unwrap(), u64::MAX);
         
-        // Invalid amounts
-        assert_eq!(validate_stake_amount(0), Err(ERROR_INVALID_STAKE_AMOUNT));
-        assert_eq!(validate_stake_amount(MAX_STAKE_AMOUNT + 1), Err(ERROR_STAKE_TOO_LARGE));
+        // Test safe subtraction edge cases
+        assert_eq!(safe_sub(u64::MAX, u64::MAX).unwrap(), 0);
+        assert_eq!(safe_sub(1, 1).unwrap(), 0);
+        
+        // Test safe multiplication edge cases
+        assert_eq!(safe_mul(0, u64::MAX).unwrap(), 0);
+        assert_eq!(safe_mul(1, u64::MAX).unwrap(), u64::MAX);
+        
+        // Test safe division edge cases
+        assert_eq!(safe_div(0, 1).unwrap(), 0);
+        assert_eq!(safe_div(u64::MAX, 1).unwrap(), u64::MAX);
+        assert_eq!(safe_div(7, 3).unwrap(), 2); // Integer division
+    }
+
+    // safe_mul_div function tests removed - function deprecated
+
+    #[test]
+    fn test_certificate_interest_calculation() {
+        // Test typical certificate interest calculation using safe_mul_div
+        let principal = 100000; // 100,000 USDT
+        let apy = 1200;         // 12% APY (1200 basis points)
+        let time_seconds = 30 * 24 * 60 * 60; // 30 days in seconds
+        let seconds_per_year = 365 * 24 * 60 * 60;
+        
+        // Calculate: (principal * apy * time_seconds) / (10000 * seconds_per_year)
+        let numerator = safe_mul(principal, apy).unwrap();
+        let numerator = safe_mul(numerator, time_seconds).unwrap();
+        let denominator = safe_mul(10000, seconds_per_year).unwrap();
+        let interest = safe_div(numerator, denominator).unwrap();
+        
+        // Should be approximately 986 USDT for 30 days at 12% APY
+        assert!(interest >= 900 && interest <= 1100);
     }
 
     #[test]
-    fn test_calculate_interest_points() {
-        // Test normal case
-        assert_eq!(calculate_interest_points(1000, 10).unwrap(), 10000);
-        assert_eq!(calculate_interest_points(5000, 100).unwrap(), 500000);
+    fn test_certificate_interest_simple_calculation() {
+        // Test certificate interest with simple approach (accepting precision loss)
+        let principal = 100000;
+        let apy = 1200; // 12% APY
+        let time_seconds = 30 * 24 * 60 * 60; // 30 days
+        let seconds_per_year = 365 * 24 * 60 * 60;
         
-        // Test overflow
-        assert_eq!(calculate_interest_points(u64::MAX, 2), Err(ERROR_OVERFLOW));
+        // Simple approach: rate per second * principal * time
+        let total_basis_seconds = safe_mul(10000, seconds_per_year).unwrap();
+        let rate_per_second = safe_div(apy, total_basis_seconds).unwrap();
+        
+        // Due to integer division, rate_per_second might be 0 for small rates
+        // This is acceptable precision loss
+        let base_interest = safe_mul(principal, rate_per_second).unwrap();
+        let _total_interest = safe_mul(base_interest, time_seconds).unwrap();
+        
+        // With precision loss, result might be 0, which is acceptable
+        // Note: u64 is always >= 0, this test validates the calculation doesn't panic
     }
 
     #[test]
-    fn test_calculate_effective_points() {
-        // Test normal case
-        assert_eq!(calculate_effective_points(1000, 2000, 5).unwrap(), 11000); // 1000 + (2000 * 5)
+    fn test_points_calculation() {
+        // Test points withdrawal calculation (17280 points per unit)
+        let effective_points = 34560; // 2 units worth
+        let divisor = 17280;
         
-        // Test with zero current points
-        assert_eq!(calculate_effective_points(0, 1000, 10).unwrap(), 10000);
+        let units = safe_div(effective_points, divisor).unwrap();
+        assert_eq!(units, 2);
         
-        // Test overflow in interest calculation
-        assert_eq!(calculate_effective_points(1000, u64::MAX, 2), Err(ERROR_OVERFLOW));
-        
-        // Test overflow in final addition
-        assert_eq!(calculate_effective_points(u64::MAX, 1, 1), Err(ERROR_OVERFLOW));
+        let cost = safe_mul(units, divisor).unwrap();
+        assert_eq!(cost, 34560);
+    }
+
+    #[test]
+    fn test_overflow_detection() {
+        // Test various overflow scenarios
+        assert_eq!(safe_add(u64::MAX, 1), Err(ERROR_OVERFLOW));
+        assert_eq!(safe_mul(u64::MAX, 2), Err(ERROR_OVERFLOW));
+        assert_eq!(safe_sub(0, 1), Err(ERROR_UNDERFLOW));
+        assert_eq!(safe_div(100, 0), Err(ERROR_DIVISION_BY_ZERO));
     }
 } 

@@ -6,18 +6,33 @@ use crate::player::{StakingPlayer, Owner};
 
 #[derive(Serialize)]
 pub struct QueryState {
+    // Time/Block info
     counter: u64,
+    // User statistics
     total_players: u64,
-    total_staked: u64,
+    // Fund tracking
+    total_funds: u64,
+    interest_claimed: u64,
+    cumulative_admin_withdrawals: u64,
+    total_recharge_amount: u64,
+    reserve_ratio: u64,
 }
 
 #[derive(Serialize, Clone)]
 pub struct GlobalState {
     pub counter: u64,
     pub total_players: u64,
-    pub total_staked: u64,       // Total staked amount
+    pub total_funds: u64,        // Total deposited funds (idle funds + certificates)
     pub txsize: u64,
     pub txcounter: u64,
+    // Certificate system counters (minimal addition)
+    pub product_type_counter: u64,   // Product type ID counter
+    pub certificate_counter: u64,    // Certificate ID counter
+    // Reserve ratio and admin withdrawal tracking
+    pub reserve_ratio: u64,          // Reserve ratio in basis points (e.g., 1000 = 10%)
+    pub cumulative_admin_withdrawals: u64,  // Total amount admin has withdrawn
+    pub interest_claimed: u64,       // Total interest claimed by users
+    pub total_recharge_amount: u64,  // Total amount recharged via product 0
 }
 
 impl GlobalState {
@@ -25,18 +40,29 @@ impl GlobalState {
         GlobalState {
             counter: 0,
             total_players: 0,
-            total_staked: 0,
+            total_funds: 0,
             txsize: 0,
             txcounter: 0,
+            product_type_counter: 1, // Start from 1 for product types
+            certificate_counter: 1,  // Start from 1 for certificates
+            reserve_ratio: 1000,    // Default 10% reserve ratio
+            cumulative_admin_withdrawals: 0,
+            interest_claimed: 0,
+            total_recharge_amount: 0,
         }
     }
 
     pub fn snapshot() -> String {
         let state = GLOBAL_STATE.0.borrow();
+        
         let query_state = QueryState {
             counter: state.counter,
             total_players: state.total_players,
-            total_staked: state.total_staked,
+            total_funds: state.total_funds,
+            interest_claimed: state.interest_claimed,
+            cumulative_admin_withdrawals: state.cumulative_admin_withdrawals,
+            total_recharge_amount: state.total_recharge_amount,
+            reserve_ratio: state.reserve_ratio,
         };
         serde_json::to_string(&query_state).unwrap()
     }
@@ -92,25 +118,46 @@ impl StorageData for GlobalState {
     fn from_data(u64data: &mut std::slice::IterMut<u64>) -> Self {
         let counter = *u64data.next().unwrap();
         let total_players = *u64data.next().unwrap();
-        let total_staked = *u64data.next().unwrap();
+        let total_funds = *u64data.next().unwrap();
         let txsize = *u64data.next().unwrap();
         let txcounter = *u64data.next().unwrap();
+        
+        let product_type_counter = *u64data.next().unwrap();
+        let certificate_counter = *u64data.next().unwrap();
+        
+        // Handle backward compatibility - set defaults if data not available
+        let reserve_ratio = u64data.next().copied().unwrap_or(1000);
+        let cumulative_admin_withdrawals = u64data.next().copied().unwrap_or(0);
+        let interest_claimed = u64data.next().copied().unwrap_or(0);
+        let total_recharge_amount = u64data.next().copied().unwrap_or(0);
         
         GlobalState {
             counter,
             total_players,
-            total_staked,
+            total_funds,
             txsize,
             txcounter,
+            product_type_counter,
+            certificate_counter,
+            reserve_ratio,
+            cumulative_admin_withdrawals,
+            interest_claimed,
+            total_recharge_amount,
         }
     }
 
     fn to_data(&self, data: &mut Vec<u64>) {
         data.push(self.counter);
         data.push(self.total_players);
-        data.push(self.total_staked);
+        data.push(self.total_funds);
         data.push(self.txsize);
         data.push(self.txcounter);
+        data.push(self.product_type_counter);
+        data.push(self.certificate_counter);
+        data.push(self.reserve_ratio);
+        data.push(self.cumulative_admin_withdrawals);
+        data.push(self.interest_claimed);
+        data.push(self.total_recharge_amount);
     }
 }
 
@@ -126,8 +173,17 @@ const TICK: u64 = 0;
 const INSTALL_PLAYER: u64 = 1;
 const WITHDRAW: u64 = 2;
 const DEPOSIT: u64 = 3;
-const WITHDRAW_USDT: u64 = 4;
 const WITHDRAW_POINTS: u64 = 5;
+
+// Certificate system transaction constants
+const CREATE_PRODUCT_TYPE: u64 = 6;
+const MODIFY_PRODUCT_TYPE: u64 = 7;
+const PURCHASE_CERTIFICATE: u64 = 10;
+const CLAIM_INTEREST: u64 = 11;
+const REDEEM_PRINCIPAL: u64 = 12;
+// Admin functions
+const ADMIN_WITHDRAW_TO_MULTISIG: u64 = 13;
+const SET_RESERVE_RATIO: u64 = 14;
 
 pub struct Transaction {
     command: crate::command::Command,
@@ -140,7 +196,12 @@ impl Transaction {
     }
 
     pub fn decode(params: &[u64]) -> Self {
-        use crate::command::{Command, Deposit, Withdraw, WithdrawUsdt, WithdrawPoints};
+        use crate::command::{
+            Command, Deposit, Withdraw, WithdrawPoints,
+            CreateProductType, ModifyProductType, PurchaseCertificate,
+            ClaimInterest, RedeemPrincipal, AdminWithdrawToMultisig,
+            SetReserveRatio
+        };
         use zkwasm_rest_abi::enforce;
         
         let command = params[0] & 0xff;
@@ -149,11 +210,6 @@ impl Transaction {
         let command = if command == WITHDRAW {
             enforce(params.len() == 5, "withdraw needs 5 params");
             Command::Withdraw(Withdraw {
-                data: [params[2], params[3], params[4]]
-            })
-        } else if command == WITHDRAW_USDT {
-            enforce(params.len() == 5, "withdraw_usdt needs 5 params");
-            Command::WithdrawUsdt(WithdrawUsdt {
                 data: [params[2], params[3], params[4]]
             })
         } else if command == WITHDRAW_POINTS {
@@ -166,6 +222,46 @@ impl Transaction {
             enforce(params[3] == 0, "check deposit index"); // only token index 0 is supported
             Command::Deposit(Deposit {
                 data: [params[1], params[2], params[4]]
+            })
+        } else if command == CREATE_PRODUCT_TYPE {
+            enforce(params.len() == 5, "create_product_type needs 5 params");
+            Command::CreateProductType(CreateProductType {
+                data: [params[2], params[3], params[4]] // [duration_days, apy, min_amount]
+            })
+        } else if command == MODIFY_PRODUCT_TYPE {
+            enforce(params.len() == 6, "modify_product_type needs 6 params");
+            Command::ModifyProductType(ModifyProductType {
+                data: [params[2], params[3], params[4], params[5]] // [product_type_id, new_apy, new_duration, new_min_amount]
+            })
+        } else if command == PURCHASE_CERTIFICATE {
+            enforce(params.len() == 4, "purchase_certificate needs 4 params");
+            Command::PurchaseCertificate(PurchaseCertificate {
+                data: [params[2], params[3]] // [product_type_id, amount]
+            })
+        } else if command == CLAIM_INTEREST {
+            enforce(params.len() == 3, "claim_interest needs 3 params");
+            // params[1] = certificate_id, params[2] = amount
+            Command::ClaimInterest(ClaimInterest {
+                certificate_id: params[1],
+                amount: params[2]
+            })
+        } else if command == REDEEM_PRINCIPAL {
+            enforce(params.len() == 3, "redeem_principal needs 3 params");
+            // params[1] = certificate_id
+            Command::RedeemPrincipal(RedeemPrincipal {
+                certificate_id: params[1]
+            })
+        } else if command == ADMIN_WITHDRAW_TO_MULTISIG {
+            enforce(params.len() == 2, "admin_withdraw_to_multisig needs 2 params");
+            // params[1] = amount
+            Command::AdminWithdrawToMultisig(AdminWithdrawToMultisig {
+                amount: params[1]
+            })
+        } else if command == SET_RESERVE_RATIO {
+            enforce(params.len() == 2, "set_reserve_ratio needs 2 params");
+            // params[1] = reserve_ratio
+            Command::SetReserveRatio(SetReserveRatio {
+                reserve_ratio: params[1]
             })
         } else if command == TICK {
             Command::Tick
@@ -224,27 +320,47 @@ impl Transaction {
                 self.tick();
                 0
             }
-            // Activity commands removed - handled in TypeScript service
             Command::Withdraw(withdraw) => {
                 withdraw.handle(&pid, self.nonce, rand, counter).map_or_else(|e| e, |_| 0)
             }
-            Command::WithdrawUsdt(withdraw_usdt) => {
-                withdraw_usdt.handle(&pid, self.nonce, rand, counter).map_or_else(|e| e, |_| 0)
-            }
             Command::WithdrawPoints(withdraw_points) => {
-                unsafe {
-                    if *pkey == *ADMIN_PUBKEY {
-                        // Admin can withdraw negative amounts (add points) without checks
-                        withdraw_points.handle_admin(&pid, self.nonce, rand, counter).map_or_else(|e| e, |_| 0)
-                    } else {
-                        // Regular user with normal checks
-                        withdraw_points.handle(&pid, self.nonce, rand, counter).map_or_else(|e| e, |_| 0)
-                    }
+                if *pkey == *ADMIN_PUBKEY {
+                    // Admin can withdraw negative amounts (add points) without checks
+                    withdraw_points.handle_admin(&pid, self.nonce, rand, counter).map_or_else(|e| e, |_| 0)
+                } else {
+                    // Regular user with normal checks
+                    withdraw_points.handle(&pid, self.nonce, rand, counter).map_or_else(|e| e, |_| 0)
                 }
             }
             Command::Deposit(deposit) => {
                 unsafe { require(*pkey == *ADMIN_PUBKEY) };
                 deposit.handle(&pid, self.nonce, rand, counter).map_or_else(|e| e, |_| 0)
+            }
+            // Certificate system commands
+            Command::CreateProductType(create_product_type) => {
+                unsafe { require(*pkey == *ADMIN_PUBKEY) };
+                create_product_type.handle(&pid, self.nonce, rand, counter).map_or_else(|e| e, |_| 0)
+            }
+            Command::ModifyProductType(modify_product_type) => {
+                unsafe { require(*pkey == *ADMIN_PUBKEY) };
+                modify_product_type.handle(&pid, self.nonce, rand, counter).map_or_else(|e| e, |_| 0)
+            }
+            Command::PurchaseCertificate(purchase_certificate) => {
+                purchase_certificate.handle(&pid, self.nonce, rand, counter).map_or_else(|e| e, |_| 0)
+            }
+            Command::ClaimInterest(claim_interest) => {
+                claim_interest.handle(&pid, self.nonce, rand, counter).map_or_else(|e| e, |_| 0)
+            }
+            Command::RedeemPrincipal(redeem_principal) => {
+                redeem_principal.handle(&pid, self.nonce, rand, counter).map_or_else(|e| e, |_| 0)
+            }
+            Command::AdminWithdrawToMultisig(admin_withdraw) => {
+                unsafe { require(*pkey == *ADMIN_PUBKEY) };
+                admin_withdraw.handle(&pid, self.nonce, rand, counter).map_or_else(|e| e, |_| 0)
+            }
+            Command::SetReserveRatio(set_reserve_ratio) => {
+                unsafe { require(*pkey == *ADMIN_PUBKEY) };
+                set_reserve_ratio.handle(&pid, self.nonce, rand, counter).map_or_else(|e| e, |_| 0)
             }
         };
         

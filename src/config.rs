@@ -10,16 +10,46 @@ lazy_static::lazy_static! {
 
 #[derive(Serialize, Clone)]
 pub struct Config {
-    actions: [&'static str; 4],
+    actions: [&'static str; 10],
     name: [&'static str; 1],
 }
 
 lazy_static::lazy_static! {
     pub static ref CONFIG: Config = Config {
-        actions: ["deposit", "withdraw", "withdraw_usdt", "withdraw_points"],
-        name: ["zkwasm_staking"],
+        actions: [
+            "deposit", 
+            "withdraw", 
+            "withdraw_points",
+            "create_product_type",
+            "modify_product_type", 
+            "purchase_certificate",
+            "claim_interest",
+            "redeem_principal",
+            "admin_withdraw_to_multisig",
+            "set_reserve_ratio"
+        ],
+        name: ["zkwasm_solar_mining"],
     };
 }
+
+// Certificate system: Multisig address for withdrawals (pre-parsed for efficiency)
+// TODO: Replace with actual production multisig address parts before deployment
+// Use ts/src/address_parser.ts to convert address to these parts
+pub const CERTIFICATE_MULTISIG_FIRST: u64 = 0x00000000;   // First 4 bytes (reversed)
+pub const CERTIFICATE_MULTISIG_MIDDLE: u64 = 0x0000000000000000; // Middle 8 bytes (reversed) 
+pub const CERTIFICATE_MULTISIG_LAST: u64 = 0x0000000000000000;   // Last 8 bytes (reversed)
+
+// Event types for certificate system (following zkwasm-launchpad pattern)
+pub const EVENT_PRODUCT_TYPE_CREATED: u64 = 6;
+pub const EVENT_PRODUCT_TYPE_MODIFIED: u64 = 7;
+pub const EVENT_CERTIFICATE_PURCHASED: u64 = 8;
+pub const EVENT_INTEREST_CLAIMED: u64 = 9;
+pub const EVENT_PRINCIPAL_REDEEMED: u64 = 10;
+pub const EVENT_INDEXED_OBJECT: u64 = 5; // Consistent with launchpad
+
+// Certificate info constants for IndexedObject (following launchpad pattern)
+pub const PRODUCT_TYPE_INFO: u64 = 1;
+pub const CERTIFICATE_INFO: u64 = 2;
 
 impl Config {
     pub fn to_json_string() -> String {
@@ -32,58 +62,105 @@ impl Config {
     }
 }
 
-// Staking platform constants
-pub const MAX_STAKE_AMOUNT: u64 = 1_000_000_000; // Maximum stake amount
+/// Get pre-parsed multisig address parts for withdrawals
+/// Avoids expensive string parsing in smart contract execution
+/// Use ts/src/address_parser.ts to generate these constants from address strings
+pub fn get_multisig_address_parts() -> (u64, u64, u64) {
+    (CERTIFICATE_MULTISIG_FIRST, CERTIFICATE_MULTISIG_MIDDLE, CERTIFICATE_MULTISIG_LAST)
+}
 
-// USDT exchange constants
-// 10w (100,000) * 17280 (ticks per day) = 1,728,000,000 points = 1 USDT
-pub const POINTS_PER_USDT: u64 = 1_728_000_000; // 10w * 17280
-pub const MIN_USDT_EXCHANGE: u64 = 1; // Minimum 1 USDT exchange
+/// Validate reserve ratio (must be <= 50%)
+pub fn validate_reserve_ratio(reserve_ratio: u64) -> bool {
+    reserve_ratio <= MAX_RESERVE_RATIO
+}
 
-// Points withdrawal constants
-// Points are divided by 17280 when withdrawing (same as USDT exchange)
+// Points withdrawal constants (for static points system)
 pub const POINTS_DIVISOR: u64 = 17280;
 pub const MIN_POINTS_WITHDRAWAL: u64 = 1; // Minimum 1 effective point withdrawal (will require 17280 actual points)
 
-// Time conversion helpers (5 seconds per tick)
+// Time conversion helpers (5 seconds per tick) - used by certificate system
 pub const SECONDS_PER_TICK: u64 = 5;
-pub const TICKS_PER_MINUTE: u64 = 12;
-pub const TICKS_PER_HOUR: u64 = 720;
 pub const TICKS_PER_DAY: u64 = 17280;
-pub const TICKS_PER_WEEK: u64 = 120960;    // 7 days
-pub const TICKS_PER_MONTH: u64 = 518400;   // 30 days
 
-// Staking configuration
-pub struct StakingConfig {
-    pub max_stake: u64,
-    pub interest_rate_per_tick: u64,  // Interest rate per tick (points growth rate)
+// Reserve ratio and recharge system constants
+pub const MAX_RESERVE_RATIO: u64 = 5000; // Max 50% reserve ratio
+pub const RECHARGE_PRODUCT_DURATION: u64 = 36500; // 100 years in days
+pub const RECHARGE_PRODUCT_APY: u64 = 0; // 0% APY for recharge products
+
+/// Calculate available funds for admin withdrawal with reserve ratio
+/// Formula: available_funds = (locked_funds - interest_paid) * (10000 - reserve_ratio) / 10000
+pub fn calculate_available_funds_with_reserve(
+    locked_funds: u64,
+    interest_paid: u64,
+    reserve_ratio: u64
+) -> Result<u64, u32> {
+    use crate::math_safe::{safe_sub, safe_mul};
+    use crate::error::ERROR_UNDERFLOW;
+    
+    if locked_funds < interest_paid {
+        return Ok(0); // No funds available if interest exceeds locked funds
+    }
+    
+    let net_locked = safe_sub(locked_funds, interest_paid)?;
+    let multiplier = safe_sub(10000u64, reserve_ratio).map_err(|_| ERROR_UNDERFLOW)?;
+    let available_before_division = safe_mul(net_locked, multiplier)?;
+    
+    Ok(available_before_division / 10000)
 }
 
-lazy_static::lazy_static! {
-    pub static ref STAKING_CONFIG: StakingConfig = StakingConfig {
-        max_stake: MAX_STAKE_AMOUNT,
-        interest_rate_per_tick: 1, // Each tick, each unit of stake earns 1 point
-    };
+/// Calculate available funds for admin withdrawal (correct formula)
+/// Formula: available_funds = user_withdrawable_funds * (1 - reserve_ratio)
+pub fn calculate_available_funds_for_admin(
+    total_funds: u64,
+    cumulative_admin_withdrawals: u64,
+    total_recharge_amount: u64,
+    reserve_ratio: u64
+) -> Result<u64, u32> {
+    use crate::math_safe::{safe_mul, safe_sub};
+    use crate::error::ERROR_UNDERFLOW;
+    
+    // First calculate user withdrawable funds
+    let user_withdrawable = calculate_user_withdrawable_funds(
+        total_funds,
+        cumulative_admin_withdrawals, 
+        total_recharge_amount
+    )?;
+    
+    // Apply reserve ratio to user withdrawable funds
+    let multiplier = safe_sub(10000u64, reserve_ratio).map_err(|_| ERROR_UNDERFLOW)?;
+    let available_before_division = safe_mul(user_withdrawable, multiplier)?;
+    
+    Ok(available_before_division / 10000)
 }
 
-impl StakingConfig {
-    /// Convert seconds to ticks
-    pub fn seconds_to_ticks(seconds: u64) -> u64 {
-        seconds / SECONDS_PER_TICK
-    }
+/// Calculate available funds for admin withdrawal (simplified - legacy)
+/// Formula: available_funds = total_funds * (1 - reserve_ratio)
+pub fn calculate_available_funds_simple(
+    total_funds: u64,
+    reserve_ratio: u64
+) -> Result<u64, u32> {
+    use crate::math_safe::{safe_mul, safe_sub};
+    use crate::error::ERROR_UNDERFLOW;
     
-    /// Convert ticks to seconds
-    pub fn ticks_to_seconds(ticks: u64) -> u64 {
-        ticks * SECONDS_PER_TICK
-    }
+    let multiplier = safe_sub(10000u64, reserve_ratio).map_err(|_| ERROR_UNDERFLOW)?;
+    let available_before_division = safe_mul(total_funds, multiplier)?;
     
-    /// Calculate expected points for a given stake amount and time
-    pub fn calculate_expected_points(&self, stake_amount: u64, ticks: u64) -> u64 {
-        stake_amount * ticks * self.interest_rate_per_tick
-    }
+    Ok(available_before_division / 10000)
+}
+
+/// Calculate funds available for user withdrawal
+/// Formula: total_funds - cumulative_admin_withdrawals + total_recharge_amount
+pub fn calculate_user_withdrawable_funds(
+    total_funds: u64,
+    cumulative_admin_withdrawals: u64,
+    total_recharge_amount: u64
+) -> Result<u64, u32> {
+    use crate::math_safe::{safe_sub, safe_add};
     
-    /// Validate stake amount
-    pub fn validate_stake_amount(amount: u64) -> bool {
-        amount > 0 && amount <= MAX_STAKE_AMOUNT
-    }
+    // Current funds in system = total_funds - admin_withdrawals + recharge_amount
+    let after_admin_withdrawals = safe_sub(total_funds, cumulative_admin_withdrawals)
+        .unwrap_or(0); // If admin withdrew more than total, result is 0
+    let available_for_users = safe_add(after_admin_withdrawals, total_recharge_amount)?;
+    
+    Ok(available_for_users)
 } 

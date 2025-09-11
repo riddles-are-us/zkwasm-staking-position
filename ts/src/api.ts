@@ -1,33 +1,17 @@
-// Simplified API focused on counter-based calculations
-export class StakingCalculator {
-    // Calculate effective points for a player at given counter
-    static calculateEffectivePoints(
-        points: bigint,
-        totalStaked: bigint,
-        lastStakeTime: bigint,
-        currentCounter: bigint
-    ): bigint {
-        if (lastStakeTime === 0n || currentCounter <= lastStakeTime) {
-            return points;
-        }
-        
-        const deltaTime = currentCounter - lastStakeTime;
-        const interestPoints = totalStaked * deltaTime;
-        return points + interestPoints;
+// Certificate system API - focused on idle funds and static points
+export class CertificateCalculator {
+    // Calculate effective points (now static - no automatic accumulation)
+    static calculateEffectivePoints(points: bigint): bigint {
+        return points; // Certificate system: points are static
     }
 
-    // Calculate interest points for given parameters
-    static calculateInterest(stakeAmount: bigint, timeDelta: bigint): bigint {
-        return stakeAmount * timeDelta;
-        }
-
-    // Format counter for display
+    // Format counter for display 
     static formatCounter(counter: bigint): string {
         return counter.toString();
     }
 
-    // Format stake amount for display
-    static formatStakeAmount(amount: bigint): string {
+    // Format amount for display
+    static formatAmount(amount: bigint): string {
         return amount.toString();
     }
 
@@ -36,37 +20,46 @@ export class StakingCalculator {
         return points.toString();
     }
 
-    // Convert counter to approximate timestamp (assuming 1 counter = 1 second)
+    // Convert counter to approximate timestamp (5 seconds per tick)
     static counterToTimestamp(counter: bigint): Date {
-        return new Date(Number(counter) * 1000);
+        return new Date(Number(counter) * 5000); // 5 seconds per tick
     }
 
     // Calculate time difference in counters
     static counterDiff(from: bigint, to: bigint): bigint {
         return to > from ? to - from : 0n;
     }
+
+    // Convert days to ticks for certificate duration
+    static daysToTicks(days: bigint): bigint {
+        return days * 17280n; // 17280 ticks per day (5 seconds per tick)
+    }
+
+    // Convert ticks to days
+    static ticksToDays(ticks: bigint): bigint {
+        return ticks / 17280n;
+    }
 }
 
-// Player data interface
+// Player data interface (certificate system)
 export interface PlayerData {
     userId: bigint[];
     points: bigint;
-    totalStaked: bigint;
-    lastStakeTime: bigint;
+    idleFunds: bigint;
 }
 
-// Global state interface
+// Global state interface (certificate system)
 export interface GlobalState {
     counter: bigint;
     totalPlayers: bigint;
-    totalStaked: bigint;
+    totalFunds: bigint;
 }
 
 // Player status with effective points
 export interface PlayerStatus extends PlayerData {
     effectivePoints: bigint;
     currentCounter: bigint;
-    }
+}
 
 // Utility functions for working with player data
 export class PlayerUtils {
@@ -75,11 +68,8 @@ export class PlayerUtils {
         playerData: PlayerData,
         currentCounter: bigint
     ): PlayerStatus {
-        const effectivePoints = StakingCalculator.calculateEffectivePoints(
-            playerData.points,
-            playerData.totalStaked,
-            playerData.lastStakeTime,
-            currentCounter
+        const effectivePoints = CertificateCalculator.calculateEffectivePoints(
+            playerData.points
         );
 
         return {
@@ -100,14 +90,13 @@ export class PlayerUtils {
         return [BigInt(parts[0] || 0), BigInt(parts[1] || 0)];
     }
 
-    // Validate player data
+    // Validate player data (certificate system)
     static validatePlayerData(data: any): PlayerData | null {
         try {
             return {
                 userId: [BigInt(data.userId[0]), BigInt(data.userId[1])],
                 points: BigInt(data.points || 0),
-                totalStaked: BigInt(data.totalStaked || 0),
-                lastStakeTime: BigInt(data.lastStakeTime || 0)
+                idleFunds: BigInt(data.idleFunds || 0)
             };
         } catch (error) {
             console.error('Invalid player data:', error);
@@ -117,12 +106,12 @@ export class PlayerUtils {
 }
 
 // Error handling
-export class StakingError extends Error {
+export class CertificateError extends Error {
     public originalError?: any;
 
     constructor(message: string, originalError?: any) {
         super(message);
-        this.name = 'StakingError';
+        this.name = 'CertificateError';
         this.originalError = originalError;
     }
 }
@@ -131,19 +120,31 @@ export class StakingError extends Error {
 export function handleRpcError(error: any): never {
     if (error.code) {
         switch (error.code) {
-            case 21:
-                throw new StakingError("Insufficient stake amount");
-            case 22:
-                throw new StakingError("Invalid stake amount");
-            case 23:
-                throw new StakingError("Stake amount too small");
-            case 24:
-                throw new StakingError("Stake amount too large");
-            case 25:
-                throw new StakingError("No stake to withdraw");
+            case 51:
+                throw new CertificateError("Product type not exist");
+            case 52:
+                throw new CertificateError("Product type inactive");
+            case 53:
+                throw new CertificateError("Certificate not exist");
+            case 54:
+                throw new CertificateError("Certificate not owned");
+            case 55:
+                throw new CertificateError("Certificate not matured");
+            case 56:
+                throw new CertificateError("Certificate already redeemed");
+            case 57:
+                throw new CertificateError("Insufficient interest");
+            case 58:
+                throw new CertificateError("Invalid principal amount");
+            case 59:
+                throw new CertificateError("Principal amount too small");
+            case 60:
+                throw new CertificateError("Invalid APY");
+            case 61:
+                throw new CertificateError("Invalid duration");
             default:
-                throw new StakingError(`Staking error: ${error.message || 'Unknown error'}`, error);
+                throw new CertificateError(`Certificate error: ${error.message || 'Unknown error'}`, error);
         }
     }
-    throw new StakingError("Unknown staking error", error);
-} 
+    throw new CertificateError("Unknown certificate error", error);
+}

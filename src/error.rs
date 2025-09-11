@@ -7,6 +7,7 @@ pub const ERROR_INSUFFICIENT_BALANCE: u32 = 3;
 pub const ERROR_OVERFLOW: u32 = 11;
 pub const ERROR_DIVISION_BY_ZERO: u32 = 12;
 pub const ERROR_UNDERFLOW: u32 = 13;
+pub const ERROR_MATH_OVERFLOW: u32 = 14;
 
 // Staking errors (20-30)
 pub const ERROR_INSUFFICIENT_STAKE: u32 = 21;
@@ -16,11 +17,22 @@ pub const ERROR_STAKE_TOO_LARGE: u32 = 24;
 pub const ERROR_NO_STAKE_TO_WITHDRAW: u32 = 25;
 pub const ERROR_WITHDRAW_TOO_EARLY: u32 = 26;
 
-// USDT exchange errors (30-40)
+// Points errors (30-40)
 pub const ERROR_INSUFFICIENT_POINTS: u32 = 31;
-pub const ERROR_INVALID_USDT_AMOUNT: u32 = 32;
-pub const ERROR_USDT_AMOUNT_TOO_SMALL: u32 = 33;
 
 // Points withdrawal errors (40-50)
 pub const ERROR_INVALID_POINTS_AMOUNT: u32 = 41;
-pub const ERROR_POINTS_AMOUNT_TOO_SMALL: u32 = 42; 
+pub const ERROR_POINTS_AMOUNT_TOO_SMALL: u32 = 42;
+
+// Certificate system errors (50-70)
+pub const ERROR_PRODUCT_TYPE_NOT_EXIST: u32 = 51;
+pub const ERROR_PRODUCT_TYPE_INACTIVE: u32 = 52;
+pub const ERROR_CERTIFICATE_NOT_EXIST: u32 = 53;
+pub const ERROR_CERTIFICATE_NOT_OWNED: u32 = 54;
+pub const ERROR_CERTIFICATE_NOT_MATURED: u32 = 55;
+pub const ERROR_CERTIFICATE_ALREADY_REDEEMED: u32 = 56;
+pub const ERROR_INSUFFICIENT_INTEREST: u32 = 57;
+pub const ERROR_INVALID_PRINCIPAL_AMOUNT: u32 = 58;
+pub const ERROR_PRINCIPAL_AMOUNT_TOO_SMALL: u32 = 59;
+pub const ERROR_INVALID_APY: u32 = 60;
+pub const ERROR_INVALID_DURATION: u32 = 61; 

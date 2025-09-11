@@ -2,7 +2,7 @@
 // Tests the /data/players/:start endpoint and builds a complete leaderboard
 
 import { ZKWasmAppRpc } from "zkwasm-minirollup-rpc";
-import { StakingCalculator } from './api.js';
+import { CertificateCalculator } from './api.js';
 
 // Initialize RPC connection
 const rpc = new ZKWasmAppRpc("http://127.0.0.1:3000");
@@ -15,8 +15,7 @@ interface PlayerAccount {
         nonce: number;
         data: {
             points: number;
-            total_staked: number;
-            last_stake_time: number;
+            idle_funds: number;
         };
     } | null;
 }
@@ -25,8 +24,7 @@ interface LeaderboardEntry {
     pkx: string;
     rank: number;
     points: bigint;
-    totalStaked: bigint;
-    lastStakeTime: bigint;
+    idleFunds: bigint;
     effectivePoints: bigint;
     index: number;
 }
@@ -63,24 +61,16 @@ function convertToLeaderboardEntry(player: PlayerAccount, globalCounter: number)
     // Handle nested data structure: player.data.data contains the actual player data
     const playerData = player.data?.data;
     const points = BigInt(playerData?.points || 0);
-    const totalStaked = BigInt(playerData?.total_staked || 0);
-    const lastStakeTime = BigInt(playerData?.last_stake_time || 0);
-    const currentCounter = BigInt(globalCounter);
+    const idleFunds = BigInt(playerData?.idle_funds || 0);
     
-    // Calculate effective points
-    const effectivePoints = StakingCalculator.calculateEffectivePoints(
-        points,
-        totalStaked,
-        lastStakeTime,
-        currentCounter
-    );
+    // Certificate system: points are static
+    const effectivePoints = CertificateCalculator.calculateEffectivePoints(points);
     
     return {
         pkx: player.pkx,
         rank: 0, // Will be set after sorting
         points,
-        totalStaked,
-        lastStakeTime,
+        idleFunds,
         effectivePoints,
         index: player.index
     };
@@ -155,10 +145,10 @@ function displayLeaderboard(leaderboard: LeaderboardEntry[]): void {
     console.log(
         "Rank".padEnd(6) +
         "Player Key".padEnd(20) +
-        "Total Staked".padEnd(15) +
+        "Idle Funds".padEnd(15) +
         "Base Points".padEnd(15) +
         "Effective Points".padEnd(18) +
-        "Last Stake Time".padEnd(16) +
+        "Index".padEnd(16) +
         "Nonce".padEnd(8)
     );
     console.log("-".repeat(120));
@@ -172,10 +162,10 @@ function displayLeaderboard(leaderboard: LeaderboardEntry[]): void {
         console.log(
             `#${player.rank}`.padEnd(6) +
             truncatedKey.padEnd(20) +
-            player.totalStaked.toString().padEnd(15) +
+            player.idleFunds.toString().padEnd(15) +
             player.points.toString().padEnd(15) +
             player.effectivePoints.toString().padEnd(18) +
-            player.lastStakeTime.toString().padEnd(16) +
+            player.index.toString().padEnd(16) +
             player.index.toString().padEnd(8)
         );
     }
@@ -185,15 +175,15 @@ function displayLeaderboard(leaderboard: LeaderboardEntry[]): void {
     
     // Summary statistics
     if (leaderboard.length > 0) {
-        const totalStaked = leaderboard.reduce((sum, player) => sum + player.totalStaked, 0n);
+        const totalIdleFunds = leaderboard.reduce((sum, player) => sum + player.idleFunds, 0n);
         const totalEffectivePoints = leaderboard.reduce((sum, player) => sum + player.effectivePoints, 0n);
-        const avgStaked = totalStaked / BigInt(leaderboard.length);
+        const avgIdleFunds = totalIdleFunds / BigInt(leaderboard.length);
         const avgEffectivePoints = totalEffectivePoints / BigInt(leaderboard.length);
         
         console.log("\n📊 LEADERBOARD STATISTICS:");
-        console.log(`   Total Staked: ${totalStaked}`);
+        console.log(`   Total Idle Funds: ${totalIdleFunds}`);
         console.log(`   Total Effective Points: ${totalEffectivePoints}`);
-        console.log(`   Average Staked: ${avgStaked}`);
+        console.log(`   Average Idle Funds: ${avgIdleFunds}`);
         console.log(`   Average Effective Points: ${avgEffectivePoints}`);
     }
     
