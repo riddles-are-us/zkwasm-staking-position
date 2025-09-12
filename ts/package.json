@@ -17,7 +17,7 @@
         "build": "npx tsc",
         "test": "node dist/test.js",
         "test:basic": "node dist/test.js basic",
-        "test:certificate": "node dist/test.js certificate", 
+        "test:certificate": "node dist/test.js certificate",
         "test:error": "node dist/test.js error",
         "test:leaderboard": "node dist/leaderboard_test.js",
         "test:all": "npm run build && npm run test",
