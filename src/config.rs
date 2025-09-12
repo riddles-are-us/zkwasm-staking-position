@@ -47,6 +47,13 @@ pub const EVENT_INTEREST_CLAIMED: u64 = 9;
 pub const EVENT_PRINCIPAL_REDEEMED: u64 = 10;
 pub const EVENT_INDEXED_OBJECT: u64 = 5; // Consistent with launchpad
 
+// Missing direct events (following zkwasm-launchpad pattern)
+pub const EVENT_DEPOSIT: u64 = 11;
+pub const EVENT_WITHDRAWAL: u64 = 12; 
+pub const EVENT_POINTS_WITHDRAWAL: u64 = 13;
+pub const EVENT_ADMIN_WITHDRAWAL: u64 = 14;
+pub const EVENT_RESERVE_RATIO_CHANGE: u64 = 15;
+
 // Certificate info constants for IndexedObject (following launchpad pattern)
 pub const PRODUCT_TYPE_INFO: u64 = 1;
 pub const CERTIFICATE_INFO: u64 = 2;

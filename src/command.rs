@@ -6,9 +6,12 @@ use zkwasm_rest_abi::WithdrawInfo;
 use crate::settlement::SettlementInfo;
 use crate::config::{POINTS_DIVISOR, MIN_POINTS_WITHDRAWAL};
 use crate::cert_manager::{ProductTypeManager, CertificateManager};
-use crate::event::{emit_product_type_indexed_object,
+use crate::event::{emit_product_type_indexed_object, emit_certificate_indexed_object,
                    emit_interest_claim_event, emit_principal_redemption_event,
-                   emit_certificate_indexed_object};
+                   emit_certificate_purchase_event, emit_deposit_event, emit_withdrawal_event,
+                   emit_points_withdrawal_event, emit_admin_withdrawal_event,
+                   emit_product_type_created_event, emit_product_type_modified_event,
+                   emit_reserve_ratio_change_event};
 
 #[derive(Clone)]
 pub enum Command {
@@ -40,7 +43,7 @@ pub struct Withdraw {
 }
 
 impl CommandHandler for Withdraw {
-    fn handle(&self, pid: &[u64; 2], nonce: u64, _rand: &[u64; 4], _counter: u64) -> Result<(), u32> {
+    fn handle(&self, pid: &[u64; 2], nonce: u64, _rand: &[u64; 4], counter: u64) -> Result<(), u32> {
         let mut player = StakingPlayer::get_from_pid(pid);
         match player.as_mut() {
             None => Err(ERROR_PLAYER_NOT_EXIST),
@@ -60,6 +63,11 @@ impl CommandHandler for Withdraw {
                 let mut state = GLOBAL_STATE.0.borrow_mut();
                 state.total_funds = safe_sub(state.total_funds, amount)?;
                 
+                // Emit withdrawal event
+                let address_parts = [self.data[0], self.data[1], self.data[2]];
+                let txid = GLOBAL_STATE.0.borrow().txcounter;
+                emit_withdrawal_event(*pid, amount, address_parts, txid, counter);
+                
                 let withdrawinfo = WithdrawInfo::new(&[self.data[0], self.data[1], self.data[2]], 0);
                 SettlementInfo::append_settlement(withdrawinfo);
                 player.store();
@@ -77,7 +85,7 @@ pub struct WithdrawPoints {
 }
 
 impl CommandHandler for WithdrawPoints {
-    fn handle(&self, pid: &[u64; 2], nonce: u64, _rand: &[u64; 4], _counter: u64) -> Result<(), u32> {
+    fn handle(&self, pid: &[u64; 2], nonce: u64, _rand: &[u64; 4], counter: u64) -> Result<(), u32> {
         let mut player = StakingPlayer::get_from_pid(pid);
         match player.as_mut() {
             None => Err(ERROR_PLAYER_NOT_EXIST),
@@ -98,7 +106,7 @@ impl CommandHandler for WithdrawPoints {
                 let required_points = safe_mul(points_amount, POINTS_DIVISOR)?;
                 
                 // Certificate system: use static points (no interest calculation)
-                let current_points = player.data.calculate_effective_points(_counter)?;
+                let current_points = player.data.calculate_effective_points(counter)?;
                 
                 // Check if user has enough points
                 if current_points < required_points {
@@ -107,6 +115,11 @@ impl CommandHandler for WithdrawPoints {
 
                 // Deduct points (no interest calculation, no timestamp update needed)
                 player.data.points = safe_sub(player.data.points, required_points)?;
+                
+                // Emit points withdrawal event
+                let address_parts = [self.data[0], self.data[1], self.data[2]];
+                let txid = GLOBAL_STATE.0.borrow().txcounter;
+                emit_points_withdrawal_event(*pid, points_amount, address_parts, txid, counter);
                 
                 // Create withdrawal info with token index 2<<8 for points
                 let withdrawinfo = WithdrawInfo::new(&[self.data[0], self.data[1], self.data[2]], 2<<8);
@@ -138,7 +151,7 @@ pub struct Deposit {
 }
 
 impl CommandHandler for Deposit {
-    fn handle(&self, pid: &[u64; 2], nonce: u64, _rand: &[u64; 4], _counter: u64) -> Result<(), u32> {
+    fn handle(&self, pid: &[u64; 2], nonce: u64, _rand: &[u64; 4], counter: u64) -> Result<(), u32> {
         let mut admin = StakingPlayer::get_from_pid(pid).unwrap();
         admin.check_and_inc_nonce(nonce);
         let mut player = StakingPlayer::get_from_pid(&[self.data[0], self.data[1]]);
@@ -159,6 +172,11 @@ impl CommandHandler for Deposit {
                 let mut state = GLOBAL_STATE.0.borrow_mut();
                 state.total_funds = safe_add(state.total_funds, amount)?;
                 
+                // Emit deposit event
+                let user_id = [self.data[0], self.data[1]];
+                let txid = GLOBAL_STATE.0.borrow().txcounter;
+                emit_deposit_event(*pid, user_id, amount, txid, counter);
+                
                 player.store();
                 admin.store();
                 Ok(())
@@ -175,7 +193,7 @@ pub struct CreateProductType {
 }
 
 impl CommandHandler for CreateProductType {
-    fn handle(&self, pid: &[u64; 2], nonce: u64, _rand: &[u64; 4], _counter: u64) -> Result<(), u32> {
+    fn handle(&self, pid: &[u64; 2], nonce: u64, _rand: &[u64; 4], counter: u64) -> Result<(), u32> {
         // Verify admin permissions (this should be checked in state.rs)
         let mut player = StakingPlayer::get_from_pid(pid).unwrap();
         player.check_and_inc_nonce(nonce);
@@ -192,6 +210,9 @@ impl CommandHandler for CreateProductType {
             emit_product_type_indexed_object(&product_type);
         }
         
+        // Emit direct product type created event
+        emit_product_type_created_event(*pid, product_type_id, duration_ticks, apy, min_amount, is_active, counter);
+        
         player.store();
         Ok(())
     }
@@ -203,7 +224,7 @@ pub struct ModifyProductType {
 }
 
 impl CommandHandler for ModifyProductType {
-    fn handle(&self, pid: &[u64; 2], nonce: u64, _rand: &[u64; 4], _counter: u64) -> Result<(), u32> {
+    fn handle(&self, pid: &[u64; 2], nonce: u64, _rand: &[u64; 4], counter: u64) -> Result<(), u32> {
         // Verify admin permissions (this should be checked in state.rs)
         let mut player = StakingPlayer::get_from_pid(pid).unwrap();
         player.check_and_inc_nonce(nonce);
@@ -221,6 +242,9 @@ impl CommandHandler for ModifyProductType {
             emit_product_type_indexed_object(&product_type);
         }
         
+        // Emit direct product type modified event
+        emit_product_type_modified_event(*pid, product_type_id, new_apy, new_duration, new_min_amount, is_active, counter);
+        
         player.store();
         Ok(())
     }
@@ -232,7 +256,7 @@ pub struct PurchaseCertificate {
 }
 
 impl CommandHandler for PurchaseCertificate {
-    fn handle(&self, pid: &[u64; 2], nonce: u64, _rand: &[u64; 4], _counter: u64) -> Result<(), u32> {
+    fn handle(&self, pid: &[u64; 2], nonce: u64, _rand: &[u64; 4], counter: u64) -> Result<(), u32> {
         let mut player = StakingPlayer::get_from_pid(pid);
         match player.as_mut() {
             None => Err(ERROR_PLAYER_NOT_EXIST),
@@ -259,6 +283,10 @@ impl CommandHandler for PurchaseCertificate {
                 if let Ok(certificate) = CertificateManager::validate_certificate_ownership(pid, cert_id) {
                     emit_certificate_indexed_object(&certificate);
                 }
+                
+                // Emit direct certificate purchase event
+                let txid = GLOBAL_STATE.0.borrow().txcounter;
+                emit_certificate_purchase_event(*pid, cert_id, product_type_id, amount, txid, counter);
                 
                 // Deduct from idle funds first
                 player.data.spend_idle_funds(amount)?;
@@ -309,7 +337,8 @@ impl CommandHandler for ClaimInterest {
                 state.interest_claimed = safe_add(state.interest_claimed, actual_amount)?;
                 
                 // Emit interest claim event
-                emit_interest_claim_event(*pid, cert_id, actual_amount, counter);
+                let txid = GLOBAL_STATE.0.borrow().txcounter;
+                emit_interest_claim_event(*pid, cert_id, actual_amount, txid, counter);
                 
                 player.store();
                 Ok(())
@@ -343,7 +372,8 @@ impl CommandHandler for RedeemPrincipal {
                 player.data.add_idle_funds(principal_amount)?;
                 
                 // Emit principal redemption event
-                emit_principal_redemption_event(*pid, cert_id, principal_amount, counter);
+                let txid = GLOBAL_STATE.0.borrow().txcounter;
+                emit_principal_redemption_event(*pid, cert_id, principal_amount, txid, counter);
                 
                 player.store();
                 Ok(())
@@ -363,7 +393,7 @@ pub struct SetReserveRatio {
 }
 
 impl CommandHandler for AdminWithdrawToMultisig {
-    fn handle(&self, pid: &[u64; 2], nonce: u64, _rand: &[u64; 4], _counter: u64) -> Result<(), u32> {
+    fn handle(&self, pid: &[u64; 2], nonce: u64, _rand: &[u64; 4], counter: u64) -> Result<(), u32> {
         // Verify admin permissions (this should be checked in state.rs)
         let mut admin = StakingPlayer::get_from_pid(pid).unwrap();
         admin.check_and_inc_nonce(nonce);
@@ -392,6 +422,10 @@ impl CommandHandler for AdminWithdrawToMultisig {
         // Update global statistics - track cumulative withdrawals
         state.cumulative_admin_withdrawals = safe_add(state.cumulative_admin_withdrawals, amount)?;
         
+        // Emit admin withdrawal event
+        let txid = GLOBAL_STATE.0.borrow().txcounter;
+        emit_admin_withdrawal_event(*pid, amount, txid, counter);
+        
         // Get pre-parsed multisig address parts to avoid trace-expensive parsing
         let (first, middle, last) = crate::config::get_multisig_address_parts();
         
@@ -405,7 +439,7 @@ impl CommandHandler for AdminWithdrawToMultisig {
 }
 
 impl CommandHandler for SetReserveRatio {
-    fn handle(&self, pid: &[u64; 2], nonce: u64, _rand: &[u64; 4], _counter: u64) -> Result<(), u32> {
+    fn handle(&self, pid: &[u64; 2], nonce: u64, _rand: &[u64; 4], counter: u64) -> Result<(), u32> {
         // Verify admin permissions (this should be checked in state.rs)
         let mut admin = StakingPlayer::get_from_pid(pid).unwrap();
         admin.check_and_inc_nonce(nonce);
@@ -419,7 +453,11 @@ impl CommandHandler for SetReserveRatio {
         
         // Update reserve ratio
         let mut state = GLOBAL_STATE.0.borrow_mut();
+        let old_ratio = state.reserve_ratio;
         state.reserve_ratio = reserve_ratio;
+        
+        // Emit reserve ratio change event
+        emit_reserve_ratio_change_event(*pid, old_ratio, reserve_ratio, counter);
         
         admin.store();
         Ok(())
