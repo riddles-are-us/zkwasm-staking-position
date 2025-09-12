@@ -106,7 +106,6 @@
  */
 
 // Certificate System Integration Tests
-// Tests actual blockchain operations and state queries
 
 import { PrivateKey, bnToHexLe } from "delphinus-curves/src/altjubjub";
 import { PlayerConvention, ZKWasmAppRpc, createCommand, createWithdrawCommand } from "zkwasm-minirollup-rpc";
@@ -322,7 +321,7 @@ class StakingAdmin extends StakingTestPlayer {
 
 }
 
-// Helper function to log player state from blockchain
+// Helper function to log player state 
 async function logPlayerState(userKey: string, stepDescription: string) {
     console.log(`\n=== ${stepDescription} ===`);
     
@@ -403,7 +402,7 @@ async function logPlayerState(userKey: string, stepDescription: string) {
         };
         
         } catch (error) {
-        console.error("Error querying blockchain state:", error);
+        console.error("Error querying state:", error);
         return null;
     }
 }

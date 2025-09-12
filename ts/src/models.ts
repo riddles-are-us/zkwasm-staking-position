@@ -7,18 +7,6 @@ export interface GlobalState {
     totalFunds: bigint;
 }
 
-// Function to get current counter from zkwasm global state
-export async function getCurrentCounter(): Promise<bigint> {
-    try {
-        // TODO: Replace with actual zkwasm state query
-        // This should call something like: await rpc.query_state() and parse the counter
-        // For now, return a mock value
-        return 1000n;
-    } catch (error) {
-        console.error("Error getting current counter:", error);
-        return 0n;
-    }
-}
 
 // Staking Player class for calculations
 export class StakingPlayer {
@@ -52,19 +40,155 @@ export class StakingPlayer {
     }
 }
 
-// Staking Event class
+// Certificate System Event Models (matching Rust event structs)
+
+export class CertificatePurchaseEvent {
+    userId: bigint[];
+    certificateId: bigint;
+    productTypeId: bigint;
+    amount: bigint;
+    txid: bigint;
+    counter: bigint;
+
+    constructor(data: any) {
+        this.userId = data.userId || [0n, 0n];
+        this.certificateId = data.certificateId || 0n;
+        this.productTypeId = data.productTypeId || 0n;
+        this.amount = data.amount || 0n;
+        this.txid = data.txid || 0n;
+        this.counter = data.counter || 0n;
+    }
+}
+
+export class InterestClaimEvent {
+    userId: bigint[];
+    certificateId: bigint;
+    amount: bigint;
+    txid: bigint;
+    counter: bigint;
+
+    constructor(data: any) {
+        this.userId = data.userId || [0n, 0n];
+        this.certificateId = data.certificateId || 0n;
+        this.amount = data.amount || 0n;
+        this.txid = data.txid || 0n;
+        this.counter = data.counter || 0n;
+    }
+}
+
+export class PrincipalRedemptionEvent {
+    userId: bigint[];
+    certificateId: bigint;
+    amount: bigint;
+    txid: bigint;
+    counter: bigint;
+
+    constructor(data: any) {
+        this.userId = data.userId || [0n, 0n];
+        this.certificateId = data.certificateId || 0n;
+        this.amount = data.amount || 0n;
+        this.txid = data.txid || 0n;
+        this.counter = data.counter || 0n;
+    }
+}
+
+export class ProductTypeEvent {
+    adminId: bigint[];
+    productTypeId: bigint;
+    durationTicks: bigint;
+    apy: bigint;
+    minAmount: bigint;
+    isActive: boolean;
+    counter: bigint;
+    eventType: 'CREATED' | 'MODIFIED';
+
+    constructor(data: any) {
+        this.adminId = data.adminId || [0n, 0n];
+        this.productTypeId = data.productTypeId || 0n;
+        this.durationTicks = data.durationTicks || 0n;
+        this.apy = data.apy || 0n;
+        this.minAmount = data.minAmount || 0n;
+        this.isActive = data.isActive || false;
+        this.counter = data.counter || 0n;
+        this.eventType = data.eventType || 'CREATED';
+    }
+}
+
+export class WithdrawalEvent {
+    userId: bigint[];
+    amount: bigint;
+    addressParts: bigint[];
+    txid: bigint;
+    counter: bigint;
+
+    constructor(data: any) {
+        this.userId = data.userId || [0n, 0n];
+        this.amount = data.amount || 0n;
+        this.addressParts = data.addressParts || [0n, 0n, 0n];
+        this.txid = data.txid || 0n;
+        this.counter = data.counter || 0n;
+    }
+}
+
+export class DepositEvent {
+    adminId: bigint[];
+    userId: bigint[];
+    amount: bigint;
+    txid: bigint;
+    counter: bigint;
+
+    constructor(data: any) {
+        this.adminId = data.adminId || [0n, 0n];
+        this.userId = data.userId || [0n, 0n];
+        this.amount = data.amount || 0n;
+        this.txid = data.txid || 0n;
+        this.counter = data.counter || 0n;
+    }
+}
+
+export class PointsWithdrawalEvent {
+    userId: bigint[];
+    pointsAmount: bigint;
+    addressParts: bigint[];
+    txid: bigint;
+    counter: bigint;
+
+    constructor(data: any) {
+        this.userId = data.userId || [0n, 0n];
+        this.pointsAmount = data.pointsAmount || 0n;
+        this.addressParts = data.addressParts || [0n, 0n, 0n];
+        this.txid = data.txid || 0n;
+        this.counter = data.counter || 0n;
+    }
+}
+
+export class AdminWithdrawalEvent {
+    adminId: bigint[];
+    amount: bigint;
+    txid: bigint;
+    counter: bigint;
+
+    constructor(data: any) {
+        this.adminId = data.adminId || [0n, 0n];
+        this.amount = data.amount || 0n;
+        this.txid = data.txid || 0n;
+        this.counter = data.counter || 0n;
+    }
+}
+
+// Legacy Staking Event class (for backwards compatibility)
 export class StakingEvent {
     userId: bigint[];
     amount: bigint;
     txid: bigint;
-    timestamp: bigint; // This is actually counter, not system timestamp
+    counter: bigint;
     eventType: 'DEPOSIT' | 'WITHDRAW';
 
     constructor(data: any) {
         this.userId = data.userId || [0n, 0n];
         this.amount = data.amount || 0n;
         this.txid = data.txid || 0n;
-        this.timestamp = data.timestamp || 0n; // Counter value
+        this.counter = data.counter || 0n;
         this.eventType = data.eventType || 'DEPOSIT';
     }
 }
@@ -116,7 +240,7 @@ export enum CertificateStatus {
 
 export interface ProductType {
     id: bigint;
-    durationDays: bigint;
+    durationTicks: bigint;    // Duration in server ticks (5 seconds per tick)
     apy: bigint;              // APY in basis points (1000 = 10%)
     minAmount: bigint;        // Minimum investment in USDT
     isActive: boolean;
@@ -130,7 +254,7 @@ export interface Certificate {
     purchaseTime: bigint;     // Counter when purchased
     maturityTime: bigint;     // Counter when it matures
     lockedApy: bigint;        // APY locked at purchase (basis points)
-    lastInterestClaim: bigint; // Last interest claim counter
+    totalInterestClaimed: bigint; // Total interest claimed so far
     status: CertificateStatus;
 }
 
@@ -145,7 +269,7 @@ export class ProductTypeManager {
     static fromData(data: bigint[]): ProductType {
         return {
             id: data[0],
-            durationDays: data[1],
+            durationTicks: data[1],
             apy: data[2],
             minAmount: data[3],
             isActive: data[4] !== 0n
@@ -155,28 +279,46 @@ export class ProductTypeManager {
     static toData(productType: ProductType): bigint[] {
         return [
             productType.id,
-            productType.durationDays,
+            productType.durationTicks,
             productType.apy,
             productType.minAmount,
             productType.isActive ? 1n : 0n
         ];
     }
 
-    static calculateMaturityTime(purchaseTime: bigint, durationDays: bigint): bigint {
-        // Convert days to counters (5 seconds per counter: 17280 counters per day)
-        const SECONDS_PER_TICK = 5n;
-        const COUNTERS_PER_DAY = (24n * 60n * 60n) / SECONDS_PER_TICK; // 17280
-        return purchaseTime + (durationDays * COUNTERS_PER_DAY);
+    static calculateMaturityTime(purchaseTime: bigint, durationTicks: bigint): bigint {
+        // Duration is already in ticks
+        return purchaseTime + durationTicks;
     }
 
     static formatApy(apyBasisPoints: bigint): string {
         // Convert basis points to percentage string
-        const percentage = Number(apyBasisPoints) / 100;
-        return `${percentage.toFixed(2)}%`;
+        // BASIS_POINTS_DIVISOR = 10000 (10000 basis points = 100%)
+        const percentage = Number(apyBasisPoints) / 10000;
+        return `${(percentage * 100).toFixed(2)}%`;
     }
 
-    static formatDuration(durationDays: bigint): string {
-        const days = Number(durationDays);
+    static formatDuration(durationTicks: bigint): string {
+        // Convert ticks to days (1 tick = 5 seconds, 17280 ticks = 1 day)
+        const TICKS_PER_DAY = 17280n;
+        const days = Number(durationTicks / TICKS_PER_DAY);
+        
+        if (days < 30) {
+            return `${days} days`;
+        } else if (days < 365) {
+            const months = Math.floor(days / 30);
+            return `${months} month${months > 1 ? 's' : ''}`;
+        } else {
+            const years = Math.floor(days / 365);
+            return `${years} year${years > 1 ? 's' : ''}`;
+        }
+    }
+
+    static formatDurationTicks(durationTicks: bigint): string {
+        // Convert ticks to days (1 tick = 5 seconds, 17280 ticks = 1 day)
+        const TICKS_PER_DAY = 17280n;
+        const days = Number(durationTicks / TICKS_PER_DAY);
+        
         if (days < 30) {
             return `${days} days`;
         } else if (days < 365) {
@@ -199,7 +341,7 @@ export class CertificateManager {
             purchaseTime: data[5],
             maturityTime: data[6],
             lockedApy: data[7],
-            lastInterestClaim: data[8],
+            totalInterestClaimed: data[8],
             status: CertificateManager.statusFromU64(data[9])
         };
     }
@@ -214,7 +356,7 @@ export class CertificateManager {
             cert.purchaseTime,
             cert.maturityTime,
             cert.lockedApy,
-            cert.lastInterestClaim,
+            cert.totalInterestClaimed,
             CertificateManager.statusToU64(cert.status)
         ];
     }
@@ -237,26 +379,39 @@ export class CertificateManager {
     }
 
     static calculateAvailableInterest(cert: Certificate, currentTime: bigint): bigint {
-        if (currentTime <= cert.lastInterestClaim) {
+        // Calculate total interest from purchase time to current time
+        const totalInterest = this.calculateTotalInterest(cert, currentTime);
+        
+        // Available interest = total earned - already claimed
+        const availableInterest = totalInterest - cert.totalInterestClaimed;
+        return availableInterest > 0n ? availableInterest : 0n;
+    }
+
+    static calculateTotalInterest(cert: Certificate, currentTime: bigint): bigint {
+        if (currentTime <= cert.purchaseTime) {
             return 0n;
         }
 
-        const timeElapsed = currentTime - cert.lastInterestClaim;
+        const timeElapsed = currentTime - cert.purchaseTime;
+        
+        // Convert to Numbers for precise calculation (avoid BigInt precision loss)
+        const principal = Number(cert.principal);
+        const apy = Number(cert.lockedApy);
+        const timeElapsedNum = Number(timeElapsed);
         
         // Use consistent time calculation with Rust backend
-        const SECONDS_PER_TICK = 5n;
-        const timeElapsedSeconds = timeElapsed * SECONDS_PER_TICK;
+        const SECONDS_PER_TICK = 5;
+        const timeElapsedSeconds = timeElapsedNum * SECONDS_PER_TICK;
         
-        // Simple interest calculation using 128-bit precision
-        // Interest = (principal * APY * time_elapsed_seconds) / (BASIS_POINTS_DIVISOR * SECONDS_PER_YEAR)
-        const SECONDS_PER_YEAR = 365n * 24n * 60n * 60n; // 31,536,000
-        const BASIS_POINTS_DIVISOR = 10000n;
+        // Simple interest calculation with floating point precision
+        const SECONDS_PER_YEAR = 365 * 24 * 60 * 60; // 31,536,000
+        const BASIS_POINTS_DIVISOR = 10000;
         
-        // Use BigInt arithmetic to prevent overflow
-        const numerator = cert.principal * cert.lockedApy * timeElapsedSeconds;
-        const denominator = BASIS_POINTS_DIVISOR * SECONDS_PER_YEAR;
+        // Calculate: (principal * apy * time_elapsed_seconds) / (basis_points * seconds_per_year)
+        const interestFloat = (principal * apy * timeElapsedSeconds) / (BASIS_POINTS_DIVISOR * SECONDS_PER_YEAR);
         
-        return numerator / denominator;
+        // Round and convert back to BigInt
+        return BigInt(Math.floor(interestFloat));
     }
 
     static calculateTotalSimpleInterest(cert: Certificate, currentTime: bigint): bigint {
@@ -325,24 +480,43 @@ export class CertificateCalculator {
 
     // Calculate expected annual interest for a certificate
     static calculateAnnualInterest(principal: bigint, apyBasisPoints: bigint): bigint {
-        return (principal * apyBasisPoints) / CertificateCalculator.BASIS_POINTS_DIVISOR;
+        // Convert to Numbers for precise calculation (avoid BigInt precision loss)
+        const principalNum = Number(principal);
+        const apyNum = Number(apyBasisPoints);
+        
+        const annualInterestFloat = (principalNum * apyNum) / Number(CertificateCalculator.BASIS_POINTS_DIVISOR);
+        
+        // Round and convert back to BigInt
+        return BigInt(Math.floor(annualInterestFloat));
     }
 
     // Calculate daily interest rate in counters
     static calculateDailyInterest(principal: bigint, apyBasisPoints: bigint): bigint {
         const annualInterest = CertificateCalculator.calculateAnnualInterest(principal, apyBasisPoints);
-        return annualInterest / 365n;
+        
+        // Convert to Number for precise division
+        const annualInterestNum = Number(annualInterest);
+        const dailyInterestFloat = annualInterestNum / 365;
+        
+        // Round and convert back to BigInt
+        return BigInt(Math.floor(dailyInterestFloat));
     }
 
     // Calculate interest for specific time period
     static calculateInterestForPeriod(principal: bigint, apyBasisPoints: bigint, counters: bigint): bigint {
-        const timeInSeconds = counters * CertificateCalculator.SECONDS_PER_TICK;
+        // Convert to Numbers for precise calculation
+        const principalNum = Number(principal);
+        const apyNum = Number(apyBasisPoints);
+        const countersNum = Number(counters);
         
-        // Use consistent formula with Rust backend
-        const numerator = principal * apyBasisPoints * timeInSeconds;
-        const denominator = CertificateCalculator.BASIS_POINTS_DIVISOR * CertificateCalculator.SECONDS_PER_YEAR;
+        const timeInSeconds = countersNum * Number(CertificateCalculator.SECONDS_PER_TICK);
         
-        return numerator / denominator;
+        // Use consistent formula with Rust backend (floating point precision)
+        const interestFloat = (principalNum * apyNum * timeInSeconds) / 
+                             (Number(CertificateCalculator.BASIS_POINTS_DIVISOR) * Number(CertificateCalculator.SECONDS_PER_YEAR));
+        
+        // Round and convert back to BigInt
+        return BigInt(Math.floor(interestFloat));
     }
 
     // Convert days to counters
@@ -357,7 +531,8 @@ export class CertificateCalculator {
 
     // Format APY for display
     static formatApy(apyBasisPoints: bigint): string {
-        const percentage = Number(apyBasisPoints) / 100;
-        return `${percentage.toFixed(2)}%`;
+        // BASIS_POINTS_DIVISOR = 10000 (10000 basis points = 100%)
+        const percentage = Number(apyBasisPoints) / 10000;
+        return `${(percentage * 100).toFixed(2)}%`;
     }
 } 
