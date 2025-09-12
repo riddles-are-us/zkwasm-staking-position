@@ -1,5 +1,5 @@
 use crate::math_safe::{safe_add, safe_mul, safe_sub, safe_div};
-use crate::config::{SECONDS_PER_TICK, TICKS_PER_DAY};
+use crate::config::SECONDS_PER_TICK;
 use zkwasm_rest_abi::StorageData;
 use serde::{Deserialize, Serialize};
 
@@ -11,8 +11,8 @@ pub const BASIS_POINTS_DIVISOR: u64 = 10000; // For APY calculation (10000 = 100
 // Certificate operation limits
 pub const MAX_CERTIFICATE_AMOUNT: u64 = 1_000_000_000; // 1B USDT max
 pub const MAX_APY_BASIS_POINTS: u64 = 50_000; // 500% maximum APY
-pub const MIN_CERTIFICATE_AMOUNT: u64 = 100; // 100 USDT minimum
-pub const MAX_CERTIFICATE_DURATION_DAYS: u64 = 3650; // 10 years maximum duration
+pub const MIN_CERTIFICATE_AMOUNT: u64 = 10; // 10 USDT minimum
+pub const MAX_CERTIFICATE_DURATION_TICKS: u64 = 3650 * 17280; // 10 years maximum duration (3650 days × 17280 ticks/day)
 
 #[derive(Serialize, Deserialize, Clone, Debug, PartialEq)]
 pub enum CertificateStatus {
@@ -43,7 +43,7 @@ impl CertificateStatus {
 #[derive(Serialize, Deserialize, Clone, Debug)]
 pub struct ProductType {
     pub id: u64,                    // Product type ID (unique identifier)
-    pub duration_days: u64,         // Duration in days
+    pub duration_ticks: u64,        // Duration in ticks (1 tick = 5 seconds)
     pub apy: u64,                   // Annual percentage yield in basis points (1000 = 10%)
     pub min_amount: u64,            // Minimum investment amount in USDT
     pub is_active: bool,            // Whether open for purchase
@@ -52,14 +52,14 @@ pub struct ProductType {
 impl StorageData for ProductType {
     fn from_data(u64data: &mut std::slice::IterMut<u64>) -> Self {
         let id = *u64data.next().unwrap();
-        let duration_days = *u64data.next().unwrap();
+        let duration_ticks = *u64data.next().unwrap();
         let apy = *u64data.next().unwrap();
         let min_amount = *u64data.next().unwrap();
         let is_active = *u64data.next().unwrap() != 0;
         
         ProductType {
             id,
-            duration_days,
+            duration_ticks,
             apy,
             min_amount,
             is_active,
@@ -68,7 +68,7 @@ impl StorageData for ProductType {
     
     fn to_data(&self, data: &mut Vec<u64>) {
         data.push(self.id);
-        data.push(self.duration_days);
+        data.push(self.duration_ticks);
         data.push(self.apy);
         data.push(self.min_amount);
         data.push(if self.is_active { 1 } else { 0 });
@@ -76,10 +76,10 @@ impl StorageData for ProductType {
 }
 
 impl ProductType {
-    pub fn new(id: u64, duration_days: u64, apy: u64, min_amount: u64) -> Self {
+    pub fn new(id: u64, duration_ticks: u64, apy: u64, min_amount: u64) -> Self {
         Self {
             id,
-            duration_days,
+            duration_ticks,
             apy,
             min_amount,
             is_active: true,
@@ -87,9 +87,8 @@ impl ProductType {
     }
     
     pub fn calculate_maturity_time(&self, purchase_time: u64) -> Result<u64, u32> {
-        // Convert duration from days to ticks (since purchase_time is in ticks)
-        let duration_ticks = safe_mul(self.duration_days, TICKS_PER_DAY)?;
-        safe_add(purchase_time, duration_ticks)
+        // Duration is already in ticks, directly add to purchase_time
+        safe_add(purchase_time, self.duration_ticks)
     }
 }
 
@@ -102,7 +101,7 @@ pub struct Certificate {
     pub purchase_time: u64,         // Purchase time (counter)
     pub maturity_time: u64,         // Maturity time (counter)
     pub locked_apy: u64,           // Locked APY at purchase (basis points)
-    pub last_interest_claim: u64, // Last interest claim time (counter)
+    pub total_interest_claimed: u64, // Total interest claimed so far
     pub status: CertificateStatus,  // Certificate status
 }
 
@@ -115,7 +114,7 @@ impl StorageData for Certificate {
         let purchase_time = *u64data.next().unwrap();
         let maturity_time = *u64data.next().unwrap();
         let locked_apy = *u64data.next().unwrap();
-        let last_interest_claim = *u64data.next().unwrap();
+        let total_interest_claimed = *u64data.next().unwrap();
         let status = CertificateStatus::from_u64(*u64data.next().unwrap());
         
         Certificate {
@@ -126,7 +125,7 @@ impl StorageData for Certificate {
             purchase_time,
             maturity_time,
             locked_apy,
-            last_interest_claim,
+            total_interest_claimed,
             status,
         }
     }
@@ -140,7 +139,7 @@ impl StorageData for Certificate {
         data.push(self.purchase_time);
         data.push(self.maturity_time);
         data.push(self.locked_apy);
-        data.push(self.last_interest_claim);
+        data.push(self.total_interest_claimed);
         data.push(self.status.to_u64());
     }
 }
@@ -163,26 +162,23 @@ impl Certificate {
             purchase_time,
             maturity_time,
             locked_apy,
-            last_interest_claim: purchase_time, // Start from purchase time
+            total_interest_claimed: 0, // Start with no interest claimed
             status: CertificateStatus::Active,
         }
     }
     
-    /// Calculate available interest that can be claimed (simple interest only)
-    /// Interest is calculated from last claim time to current time
+    /// Calculate available interest that can be claimed (cumulative approach)
+    /// Returns total earned interest minus what has already been claimed
     pub fn calculate_available_interest(&self, current_time: u64) -> Result<u64, u32> {
-        if current_time <= self.last_interest_claim {
-            return Ok(0); // No new interest generated
+        // Calculate total interest from purchase time to current time
+        let total_earned = self.calculate_total_simple_interest(current_time)?;
+        
+        // Return the difference between total earned and already claimed
+        if total_earned >= self.total_interest_claimed {
+            Ok(safe_sub(total_earned, self.total_interest_claimed)?)
+        } else {
+            Ok(0) // Safety check in case of calculation inconsistency
         }
-        
-        let time_elapsed = safe_sub(current_time, self.last_interest_claim)?;
-        let time_elapsed_seconds = safe_mul(time_elapsed, SECONDS_PER_TICK)?;
-        
-        // Simple interest calculation: (principal * APY * time) / (BASIS_POINTS * seconds_per_year)
-        // Break down to avoid overflow: first convert APY to rate, then multiply by time
-        let rate_per_second = safe_div(self.locked_apy, safe_mul(BASIS_POINTS_DIVISOR, SECONDS_PER_YEAR)?)?;
-        let base_interest = safe_mul(self.principal, rate_per_second)?;
-        safe_mul(base_interest, time_elapsed_seconds)
     }
     
     /// Calculate total simple interest from purchase to current time
@@ -194,11 +190,15 @@ impl Certificate {
         let total_time = safe_sub(current_time, self.purchase_time)?;
         let total_time_seconds = safe_mul(total_time, SECONDS_PER_TICK)?;
         
-        // Simple interest calculation: (principal * APY * time) / (BASIS_POINTS * seconds_per_year)
-        // Break down to avoid overflow: first convert APY to rate, then multiply by time
-        let rate_per_second = safe_div(self.locked_apy, safe_mul(BASIS_POINTS_DIVISOR, SECONDS_PER_YEAR)?)?;
-        let base_interest = safe_mul(self.principal, rate_per_second)?;
-        safe_mul(base_interest, total_time_seconds)
+        // Simple interest calculation: (principal * APY * time_seconds) / (BASIS_POINTS * seconds_per_year)
+        // Avoid overflow by rearranging: (principal * APY) / BASIS_POINTS * time_seconds / seconds_per_year
+        // This separates percentage calculation from time scaling
+        
+        // First calculate the annual interest rate: (principal * APY) / BASIS_POINTS
+        let annual_interest = safe_div(safe_mul(self.principal, self.locked_apy)?, BASIS_POINTS_DIVISOR)?;
+        
+        // Then scale by time: annual_interest * time_seconds / seconds_per_year
+        safe_div(safe_mul(annual_interest, total_time_seconds)?, SECONDS_PER_YEAR)
     }
     
     /// Check if certificate has matured
@@ -216,9 +216,9 @@ impl Certificate {
         }
     }
     
-    /// Record interest claim
-    pub fn claim_interest(&mut self, current_time: u64) -> Result<(), u32> {
-        self.last_interest_claim = current_time;
+    /// Record interest claim (add claimed amount to total)
+    pub fn claim_interest(&mut self, claimed_amount: u64) -> Result<(), u32> {
+        self.total_interest_claimed = safe_add(self.total_interest_claimed, claimed_amount)?;
         Ok(())
     }
     
@@ -241,6 +241,7 @@ impl Certificate {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::config::TICKS_PER_DAY;
     
     #[test]
     fn test_certificate_status_conversion() {
@@ -255,7 +256,7 @@ mod tests {
     
     #[test]
     fn test_product_type_maturity_calculation() {
-        let product = ProductType::new(1, 30, 1200, 1000); // 30 days, 12% APY
+        let product = ProductType::new(1, 30 * TICKS_PER_DAY, 1200, 1000); // 30 days in ticks, 12% APY
         let purchase_time = 1000;
         let expected_maturity = purchase_time + (30 * TICKS_PER_DAY); // Use TICKS_PER_DAY
         
@@ -313,18 +314,18 @@ mod tests {
         // Accept that interest might be 0 due to integer division precision loss
         
         // Withdraw half the available interest  
-        let _withdrawal_amount = available_interest / 2;
-        cert.last_interest_claim = time_30_days;
+        let withdrawal_amount = available_interest / 2;
+        cert.claim_interest(withdrawal_amount).unwrap();
         
         // After another 30 days, check available interest
         let time_60_days = 60 * TICKS_PER_DAY;
         let new_available = cert.calculate_available_interest(time_60_days).unwrap();
         
-        // Should have 30 days worth of new interest
-        // Create a fresh certificate with same parameters to calculate 30-day interest
-        let fresh_cert = Certificate::new(1, [100, 200], 1, 100000, 0, 365 * TICKS_PER_DAY, 1200);
-        let expected_30_day_interest = fresh_cert.calculate_available_interest(30 * TICKS_PER_DAY).unwrap();
-        assert_eq!(new_available, expected_30_day_interest);
+        // Should have remaining interest after partial claim
+        // Total 60-day interest minus what we already claimed
+        let total_60_day_interest = cert.calculate_total_simple_interest(time_60_days).unwrap();
+        let expected_available = total_60_day_interest - cert.total_interest_claimed;
+        assert_eq!(new_available, expected_available);
     }
 
     #[test]
@@ -352,14 +353,105 @@ mod tests {
     #[test]
     fn test_product_type_validation() {
         // Valid product type
-        let valid_product = ProductType::new(1, 30, 1200, 1000);
+        let valid_product = ProductType::new(1, 30 * TICKS_PER_DAY, 1200, 1000);
         assert!(valid_product.is_active);
         
         // Test edge cases
-        let min_duration = ProductType::new(2, 1, 100, 1); // 1 day, 1% APY, 1 USDT min
-        assert_eq!(min_duration.duration_days, 1);
+        let min_duration = ProductType::new(2, 17280, 100, 1); // 1 day (17280 ticks), 1% APY, 1 USDT min
+        assert_eq!(min_duration.duration_ticks, 17280);
         
-        let high_apy = ProductType::new(3, 7, 5000, 100000); // 7 days, 50% APY, 100k min
+        let high_apy = ProductType::new(3, 7 * TICKS_PER_DAY, 5000, 100000); // 7 days, 50% APY, 100k min
         assert_eq!(high_apy.apy, 5000);
+    }
+
+    #[test]
+    fn test_cumulative_interest_precision() {
+        let mut cert = Certificate::new(1, [100, 200], 1, 1000, 0, 365 * TICKS_PER_DAY, 1200); // 1000 USDT, 12% APY
+        
+        // Test cumulative approach prevents precision loss
+        let time_1_day = TICKS_PER_DAY;
+        let available_1_day = cert.calculate_available_interest(time_1_day).unwrap();
+        
+        // Even if available interest is 0 due to precision, claiming it doesn't lose the fractional part
+        if available_1_day > 0 {
+            cert.claim_interest(available_1_day).unwrap();
+            assert_eq!(cert.total_interest_claimed, available_1_day);
+        }
+        
+        // After more time, the cumulative calculation should still be accurate
+        let time_30_days = 30 * TICKS_PER_DAY;
+        let available_30_days = cert.calculate_available_interest(time_30_days).unwrap();
+        
+        // Total earned should equal claimed + available
+        let total_earned = cert.calculate_total_simple_interest(time_30_days).unwrap();
+        assert_eq!(total_earned, cert.total_interest_claimed + available_30_days);
+        
+        // Multiple small claims should accumulate correctly
+        let small_claim = available_30_days / 3;
+        if small_claim > 0 {
+            let initial_claimed = cert.total_interest_claimed;
+            cert.claim_interest(small_claim).unwrap();
+            assert_eq!(cert.total_interest_claimed, initial_claimed + small_claim);
+            
+            // Available interest should decrease by exact claim amount
+            let new_available = cert.calculate_available_interest(time_30_days).unwrap();
+            assert_eq!(new_available, available_30_days - small_claim);
+        }
+    }
+
+    #[test]
+    fn test_interest_calculation_precision_fix() {
+        // Test the precision fix for interest calculation order
+        let cert = Certificate::new(1, [100, 200], 1, 100000, 0, 365 * TICKS_PER_DAY, 1200); // 100,000 USDT, 12% APY
+        
+        // After 1 day (17280 ticks), interest should be non-zero
+        let time_1_day = TICKS_PER_DAY;
+        let interest_1_day = cert.calculate_total_simple_interest(time_1_day).unwrap();
+        assert!(interest_1_day > 0, "1-day interest should be > 0 with proper calculation order");
+        
+        // After 30 days, interest should be approximately: 100,000 * 0.12 * 30/365 ≈ 986
+        let time_30_days = 30 * TICKS_PER_DAY;
+        let interest_30_days = cert.calculate_total_simple_interest(time_30_days).unwrap();
+        assert!(interest_30_days > 900, "30-day interest should be around 986 USDT, got {}", interest_30_days);
+        assert!(interest_30_days < 1100, "30-day interest should be around 986 USDT, got {}", interest_30_days);
+        
+        // After 1 year, interest should be approximately: 100,000 * 0.12 = 12,000
+        let time_1_year = 365 * TICKS_PER_DAY;
+        let interest_1_year = cert.calculate_total_simple_interest(time_1_year).unwrap();
+        assert!(interest_1_year > 11000, "1-year interest should be around 12,000 USDT, got {}", interest_1_year);
+        assert!(interest_1_year < 13000, "1-year interest should be around 12,000 USDT, got {}", interest_1_year);
+        
+        println!("Interest calculations working correctly:");
+        println!("1 day: {} USDT", interest_1_day);
+        println!("30 days: {} USDT", interest_30_days);
+        println!("1 year: {} USDT", interest_1_year);
+    }
+
+    #[test]
+    fn test_maximum_values_no_overflow() {
+        // Test with maximum possible values to ensure no overflow
+        let max_cert = Certificate::new(
+            1, 
+            [100, 200], 
+            1, 
+            MAX_CERTIFICATE_AMOUNT,     // 1B USDT
+            0, 
+            MAX_CERTIFICATE_DURATION_TICKS, // 10 years
+            MAX_APY_BASIS_POINTS        // 500% APY
+        );
+        
+        // Test maximum time (10 years)
+        let max_time = MAX_CERTIFICATE_DURATION_TICKS;
+        let max_interest = max_cert.calculate_total_simple_interest(max_time);
+        
+        // Should not panic or return error
+        assert!(max_interest.is_ok(), "Maximum values should not cause overflow");
+        let interest = max_interest.unwrap();
+        
+        // Expected: 1B × 500% × 10 years = 50B USDT
+        // Actual calculation: (1B × 50000) / 10000 × 10 years = 5B × 10 = 50B
+        assert_eq!(interest, 50_000_000_000, "10-year max interest should be 50B USDT");
+        
+        println!("Maximum calculation test passed: 1B USDT × 500% APY × 10 years = {} USDT", interest);
     }
 }

@@ -7,7 +7,8 @@ use crate::settlement::SettlementInfo;
 use crate::config::{POINTS_DIVISOR, MIN_POINTS_WITHDRAWAL};
 use crate::cert_manager::{ProductTypeManager, CertificateManager};
 use crate::event::{emit_product_type_indexed_object,
-                   emit_interest_claim_event, emit_principal_redemption_event};
+                   emit_interest_claim_event, emit_principal_redemption_event,
+                   emit_certificate_indexed_object};
 
 #[derive(Clone)]
 pub enum Command {
@@ -170,7 +171,7 @@ impl CommandHandler for Deposit {
 
 #[derive(Clone)]
 pub struct CreateProductType {
-    pub data: [u64; 3], // [duration_days, apy, min_amount]
+    pub data: [u64; 4], // [duration_ticks, apy, min_amount, is_active]
 }
 
 impl CommandHandler for CreateProductType {
@@ -179,11 +180,12 @@ impl CommandHandler for CreateProductType {
         let mut player = StakingPlayer::get_from_pid(pid).unwrap();
         player.check_and_inc_nonce(nonce);
         
-        let duration_days = self.data[0];
+        let duration_ticks = self.data[0];
         let apy = self.data[1];
         let min_amount = self.data[2];
+        let is_active = self.data[3] != 0; // 0 = false, 非0 = true
         
-        let product_type_id = ProductTypeManager::create_product_type(duration_days, apy, min_amount)?;
+        let product_type_id = ProductTypeManager::create_product_type(duration_ticks, apy, min_amount, is_active)?;
         
         // Emit IndexedObject event for the new product type
         if let Some(product_type) = ProductTypeManager::get_product_type(product_type_id) {
@@ -197,7 +199,7 @@ impl CommandHandler for CreateProductType {
 
 #[derive(Clone)]
 pub struct ModifyProductType {
-    pub data: [u64; 4], // [product_type_id, new_apy, new_duration, new_min_amount]
+    pub data: [u64; 5], // [product_type_id, new_apy, new_duration, new_min_amount, is_active]
 }
 
 impl CommandHandler for ModifyProductType {
@@ -210,8 +212,9 @@ impl CommandHandler for ModifyProductType {
         let new_apy = self.data[1];
         let new_duration = self.data[2];
         let new_min_amount = self.data[3];
+        let is_active = self.data[4] != 0; // 0 = false, 非0 = true
         
-        ProductTypeManager::modify_product_type(product_type_id, new_apy, new_duration, new_min_amount)?;
+        ProductTypeManager::modify_product_type(product_type_id, new_apy, new_duration, new_min_amount, is_active)?;
         
         // Emit IndexedObject event for the updated product type
         if let Some(product_type) = ProductTypeManager::get_product_type(product_type_id) {
@@ -250,26 +253,28 @@ impl CommandHandler for PurchaseCertificate {
                 }
                 
                 // Create certificate
-                let _cert_id = CertificateManager::purchase_certificate(*pid, product_type_id, amount)?;
+                let cert_id = CertificateManager::purchase_certificate(*pid, product_type_id, amount)?;
+                
+                // Emit certificate indexed object event
+                if let Ok(certificate) = CertificateManager::validate_certificate_ownership(pid, cert_id) {
+                    emit_certificate_indexed_object(&certificate);
+                }
+                
+                // Deduct from idle funds first
+                player.data.spend_idle_funds(amount)?;
                 
                 // Update global statistics
                 let mut state = GLOBAL_STATE.0.borrow_mut();
                 
                 if product_type_id == 0 {
                     // Special handling for product type 0 (recharge product)
-                    // This is a recharge operation - don't increase total_funds (it's external funding)
-                    // Record total recharge amount and recalculate available funds
-                    state.total_recharge_amount = safe_add(state.total_recharge_amount, amount)?;
+                    // User's funds convert from "user principal" to "external recharge funding"
+                    state.total_funds = safe_sub(state.total_funds, amount)?; // 减少用户本金
+                    state.total_recharge_amount = safe_add(state.total_recharge_amount, amount)?; // 增加回充资金
                 } else {
-                    // Normal certificate purchase - funds are already in total_funds from deposit
+                    // Normal certificate purchase - funds stay in system, no change to total_funds needed
+                    // (user idle_funds decreased, but money is still in the system as locked certificate)
                 }
-                
-                // Emit IndexedObject event for the new certificate
-                // Note: Event emission with certificate data is handled after successful storage
-                // Certificate data is accessible via validate_certificate_ownership if needed
-                
-                // Deduct from idle funds
-                player.data.spend_idle_funds(amount)?;
                 
                 player.store();
                 Ok(())
@@ -281,7 +286,6 @@ impl CommandHandler for PurchaseCertificate {
 #[derive(Clone)]
 pub struct ClaimInterest {
     pub certificate_id: u64,
-    pub amount: u64, // Amount of interest to extract to idle funds
 }
 
 impl CommandHandler for ClaimInterest {
@@ -293,15 +297,9 @@ impl CommandHandler for ClaimInterest {
                 player.check_and_inc_nonce(nonce);
                 
                 let cert_id = self.certificate_id;
-                let requested_amount = self.amount;
                 
-                // Validate amount is not zero
-                if requested_amount == 0 {
-                    return Err(ERROR_INVALID_PRINCIPAL_AMOUNT);
-                }
-                
-                // Certificate system: Extract interest to idle funds (no external claim)
-                let actual_amount = CertificateManager::claim_interest(pid, cert_id, requested_amount)?;
+                // Certificate system: Claim all available interest (no external claim)
+                let actual_amount = CertificateManager::claim_interest(pid, cert_id)?;
                 
                 // Add interest to user's idle funds
                 player.data.add_idle_funds(actual_amount)?;
@@ -379,7 +377,7 @@ impl CommandHandler for AdminWithdrawToMultisig {
         
         // Calculate available funds for admin withdrawal (based on user withdrawable funds)
         let mut state = GLOBAL_STATE.0.borrow_mut();
-        let max_available = crate::config::calculate_available_funds_for_admin(
+        let max_available = crate::config::calculate_available_funds(
             state.total_funds,
             state.cumulative_admin_withdrawals,
             state.total_recharge_amount,

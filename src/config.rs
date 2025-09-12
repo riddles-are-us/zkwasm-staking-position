@@ -88,79 +88,29 @@ pub const RECHARGE_PRODUCT_DURATION: u64 = 36500; // 100 years in days
 pub const RECHARGE_PRODUCT_APY: u64 = 0; // 0% APY for recharge products
 
 /// Calculate available funds for admin withdrawal with reserve ratio
-/// Formula: available_funds = (locked_funds - interest_paid) * (10000 - reserve_ratio) / 10000
-pub fn calculate_available_funds_with_reserve(
-    locked_funds: u64,
-    interest_paid: u64,
-    reserve_ratio: u64
-) -> Result<u64, u32> {
-    use crate::math_safe::{safe_sub, safe_mul};
-    use crate::error::ERROR_UNDERFLOW;
-    
-    if locked_funds < interest_paid {
-        return Ok(0); // No funds available if interest exceeds locked funds
-    }
-    
-    let net_locked = safe_sub(locked_funds, interest_paid)?;
-    let multiplier = safe_sub(10000u64, reserve_ratio).map_err(|_| ERROR_UNDERFLOW)?;
-    let available_before_division = safe_mul(net_locked, multiplier)?;
-    
-    Ok(available_before_division / 10000)
-}
-
-/// Calculate available funds for admin withdrawal (correct formula)
-/// Formula: available_funds = user_withdrawable_funds * (1 - reserve_ratio)
-pub fn calculate_available_funds_for_admin(
+/// Formula: (total_funds + total_recharge_amount - cumulative_admin_withdrawals) * (1 - reserve_ratio)
+pub fn calculate_available_funds(
     total_funds: u64,
     cumulative_admin_withdrawals: u64,
     total_recharge_amount: u64,
     reserve_ratio: u64
 ) -> Result<u64, u32> {
-    use crate::math_safe::{safe_mul, safe_sub};
+    use crate::math_safe::{safe_sub, safe_add, safe_mul};
     use crate::error::ERROR_UNDERFLOW;
     
-    // First calculate user withdrawable funds
-    let user_withdrawable = calculate_user_withdrawable_funds(
-        total_funds,
-        cumulative_admin_withdrawals, 
-        total_recharge_amount
-    )?;
+    // Calculate base user withdrawable funds: 先加后减
+    let funds_with_recharge = safe_add(total_funds, total_recharge_amount)?;
     
-    // Apply reserve ratio to user withdrawable funds
+    // 判断是否小于admin提取金额，如果是则返回0
+    let user_withdrawable = if funds_with_recharge >= cumulative_admin_withdrawals {
+        safe_sub(funds_with_recharge, cumulative_admin_withdrawals)?
+    } else {
+        0 // Admin提取超过了总资金，用户无资金可提取
+    };
+    
+    // Apply reserve ratio for admin borrowable funds
     let multiplier = safe_sub(10000u64, reserve_ratio).map_err(|_| ERROR_UNDERFLOW)?;
     let available_before_division = safe_mul(user_withdrawable, multiplier)?;
     
     Ok(available_before_division / 10000)
-}
-
-/// Calculate available funds for admin withdrawal (simplified - legacy)
-/// Formula: available_funds = total_funds * (1 - reserve_ratio)
-pub fn calculate_available_funds_simple(
-    total_funds: u64,
-    reserve_ratio: u64
-) -> Result<u64, u32> {
-    use crate::math_safe::{safe_mul, safe_sub};
-    use crate::error::ERROR_UNDERFLOW;
-    
-    let multiplier = safe_sub(10000u64, reserve_ratio).map_err(|_| ERROR_UNDERFLOW)?;
-    let available_before_division = safe_mul(total_funds, multiplier)?;
-    
-    Ok(available_before_division / 10000)
-}
-
-/// Calculate funds available for user withdrawal
-/// Formula: total_funds - cumulative_admin_withdrawals + total_recharge_amount
-pub fn calculate_user_withdrawable_funds(
-    total_funds: u64,
-    cumulative_admin_withdrawals: u64,
-    total_recharge_amount: u64
-) -> Result<u64, u32> {
-    use crate::math_safe::{safe_sub, safe_add};
-    
-    // Current funds in system = total_funds - admin_withdrawals + recharge_amount
-    let after_admin_withdrawals = safe_sub(total_funds, cumulative_admin_withdrawals)
-        .unwrap_or(0); // If admin withdrew more than total, result is 0
-    let available_for_users = safe_add(after_admin_withdrawals, total_recharge_amount)?;
-    
-    Ok(available_for_users)
 } 

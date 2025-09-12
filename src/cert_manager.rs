@@ -6,9 +6,7 @@ use zkwasm_rest_abi::{StorageData, MERKLE_MAP};
 /// Manager for ProductType storage operations
 pub struct ProductTypeManager;
 
-/// Default recharge product constants (ID 0)
-const RECHARGE_DURATION: u64 = 36500; // 100 years in days
-
+/// Default recharge product uses maximum duration
 impl ProductTypeManager {
     /// Store a product type with the given ID
     pub fn store_product_type(product_type: &ProductType) {
@@ -40,7 +38,7 @@ impl ProductTypeManager {
     fn get_default_recharge_product() -> ProductType {
         ProductType {
             id: 0,                    // Recharge product is always ID 0
-            duration_days: RECHARGE_DURATION, // 100 years
+            duration_ticks: crate::certificate::MAX_CERTIFICATE_DURATION_TICKS, // Maximum duration
             apy: 0,                   // 0% APY for recharge
             min_amount: 1,            // 1 USDT minimum
             is_active: true,
@@ -49,19 +47,19 @@ impl ProductTypeManager {
     
     /// Create a new product type (admin only)
     pub fn create_product_type(
-        duration_days: u64, 
+        duration_ticks: u64, 
         apy: u64, 
-        min_amount: u64
+        min_amount: u64,
+        is_active: bool
     ) -> Result<u64, u32> {
         // Validate parameters using certificate constants
-        if duration_days == 0 || duration_days > crate::certificate::MAX_CERTIFICATE_DURATION_DAYS {
+        if duration_ticks == 0 || duration_ticks > crate::certificate::MAX_CERTIFICATE_DURATION_TICKS {
             return Err(ERROR_INVALID_DURATION);
         }
         if apy > crate::certificate::MAX_APY_BASIS_POINTS {
             return Err(ERROR_INVALID_APY);
         }
-        if min_amount < crate::certificate::MIN_CERTIFICATE_AMOUNT 
-            || min_amount > crate::certificate::MAX_CERTIFICATE_AMOUNT {
+        if !(crate::certificate::MIN_CERTIFICATE_AMOUNT..=crate::certificate::MAX_CERTIFICATE_AMOUNT).contains(&min_amount) {
             return Err(ERROR_INVALID_PRINCIPAL_AMOUNT);
         }
         
@@ -74,7 +72,8 @@ impl ProductTypeManager {
         };
         
         // Create and store product type
-        let product_type = ProductType::new(product_type_id, duration_days, apy, min_amount);
+        let mut product_type = ProductType::new(product_type_id, duration_ticks, apy, min_amount);
+        product_type.is_active = is_active; // Set the specified active status
         Self::store_product_type(&product_type);
         
         Ok(product_type_id)
@@ -85,7 +84,8 @@ impl ProductTypeManager {
         product_type_id: u64,
         new_apy: u64,
         new_duration: u64,
-        new_min_amount: u64
+        new_min_amount: u64,
+        is_active: bool
     ) -> Result<(), u32> {
         let mut product_type = Self::get_product_type(product_type_id)
             .ok_or(ERROR_PRODUCT_TYPE_NOT_EXIST)?;
@@ -94,7 +94,7 @@ impl ProductTypeManager {
         if new_apy > crate::certificate::MAX_APY_BASIS_POINTS {
             return Err(ERROR_INVALID_APY);
         }
-        if new_duration == 0 || new_duration > crate::certificate::MAX_CERTIFICATE_DURATION_DAYS {
+        if new_duration == 0 || new_duration > crate::certificate::MAX_CERTIFICATE_DURATION_TICKS {
             return Err(ERROR_INVALID_DURATION);
         }
         if new_min_amount == 0 {
@@ -103,8 +103,9 @@ impl ProductTypeManager {
         
         // Update fields
         product_type.apy = new_apy;
-        product_type.duration_days = new_duration;
+        product_type.duration_ticks = new_duration;
         product_type.min_amount = new_min_amount;
+        product_type.is_active = is_active;
         
         // Store updated product type
         Self::store_product_type(&product_type);
@@ -155,8 +156,7 @@ impl CertificateManager {
         principal_amount: u64
     ) -> Result<u64, u32> {
         // Validate principal amount within global limits first
-        if principal_amount < crate::certificate::MIN_CERTIFICATE_AMOUNT 
-            || principal_amount > crate::certificate::MAX_CERTIFICATE_AMOUNT {
+        if !(crate::certificate::MIN_CERTIFICATE_AMOUNT..=crate::certificate::MAX_CERTIFICATE_AMOUNT).contains(&principal_amount) {
             return Err(ERROR_INVALID_PRINCIPAL_AMOUNT);
         }
         
@@ -200,27 +200,26 @@ impl CertificateManager {
         Ok(certificate_id)
     }
     
-    /// Claim interest from a certificate
+    /// Claim all available interest from a certificate
     pub fn claim_interest(
         owner: &[u64; 2],
-        cert_id: u64,
-        requested_amount: u64
+        cert_id: u64
     ) -> Result<u64, u32> {
         let mut cert = Self::validate_certificate_ownership(owner, cert_id)?;
         
         let current_time = GLOBAL_STATE.0.borrow().counter;
         let available_interest = cert.calculate_available_interest(current_time)?;
         
-        // Check if requested amount is available
-        if requested_amount > available_interest {
+        // Only claim if there's at least 1 unit of interest available
+        if available_interest == 0 {
             return Err(ERROR_INSUFFICIENT_INTEREST);
         }
         
-        // Record the claim
-        cert.claim_interest(current_time)?;
+        // Record the claim (add to total claimed)
+        cert.claim_interest(available_interest)?;
         Self::store_certificate(&cert);
         
-        Ok(requested_amount)
+        Ok(available_interest)
     }
     
     /// Redeem principal from a matured certificate
@@ -269,23 +268,23 @@ mod tests {
     fn test_product_type_creation_logic() {
         // Test parameter validation for product type creation
         
-        // Valid parameters
-        assert!(validate_product_type_params(30, 1200, 1000));
-        assert!(validate_product_type_params(365, 1500, 5000));
+        // Valid parameters (using ticks)
+        assert!(validate_product_type_params(30 * TICKS_PER_DAY, 1200, 1000));
+        assert!(validate_product_type_params(365 * TICKS_PER_DAY, 1500, 5000));
         
         // Invalid duration
         assert!(!validate_product_type_params(0, 1200, 1000));
-        assert!(!validate_product_type_params(3651, 1200, 1000)); // > MAX_CERTIFICATE_DURATION_DAYS
+        assert!(!validate_product_type_params(3651 * TICKS_PER_DAY, 1200, 1000)); // > MAX_CERTIFICATE_DURATION_TICKS
         
         // Valid APY including 0% (no interest products allowed)
-        assert!(validate_product_type_params(30, 0, 1000));
+        assert!(validate_product_type_params(30 * TICKS_PER_DAY, 0, 1000));
         
         // Invalid APY
-        assert!(!validate_product_type_params(30, 60000, 1000)); // > MAX_APY_BASIS_POINTS
+        assert!(!validate_product_type_params(30 * TICKS_PER_DAY, 60000, 1000)); // > MAX_APY_BASIS_POINTS
         
         // Invalid min amount
-        assert!(!validate_product_type_params(30, 1200, 0));
-        assert!(!validate_product_type_params(30, 1200, u64::MAX)); // > MAX_CERTIFICATE_AMOUNT
+        assert!(!validate_product_type_params(30 * TICKS_PER_DAY, 1200, 0));
+        assert!(!validate_product_type_params(30 * TICKS_PER_DAY, 1200, u64::MAX)); // > MAX_CERTIFICATE_AMOUNT
     }
 
     #[test]
@@ -298,27 +297,27 @@ mod tests {
         
         // Invalid purchase amounts
         assert!(!validate_certificate_purchase_amount(0));
-        assert!(!validate_certificate_purchase_amount(99)); // < MIN_CERTIFICATE_AMOUNT (100)
+        assert!(!validate_certificate_purchase_amount(9)); // < MIN_CERTIFICATE_AMOUNT (10)
         assert!(!validate_certificate_purchase_amount(u64::MAX)); // > MAX_CERTIFICATE_AMOUNT
     }
 
     #[test]
     fn test_certificate_maturity_calculation() {
         let purchase_time = 1000u64;
-        let duration_days = 30u64;
+        let duration_ticks = 30u64 * TICKS_PER_DAY; // 30 days in ticks
         
-        let expected_maturity = purchase_time + duration_days * TICKS_PER_DAY;
-        let calculated_maturity = calculate_certificate_maturity(purchase_time, duration_days);
+        let expected_maturity = purchase_time + duration_ticks;
+        let calculated_maturity = calculate_certificate_maturity(purchase_time, duration_ticks);
         
         assert_eq!(calculated_maturity, expected_maturity);
         
         // Test with different durations
         assert_eq!(
-            calculate_certificate_maturity(0, 1),
+            calculate_certificate_maturity(0, TICKS_PER_DAY), // 1 day
             TICKS_PER_DAY
         );
         assert_eq!(
-            calculate_certificate_maturity(5000, 365),
+            calculate_certificate_maturity(5000, 365 * TICKS_PER_DAY), // 1 year
             5000 + 365 * TICKS_PER_DAY
         );
     }
@@ -381,9 +380,10 @@ mod tests {
         // Accept precision loss - result may be 0
         
         // After partial withdrawal, available interest should be reduced
-        cert.last_interest_claim = after_30_days;
+        let half_withdrawal = _available_after_30 / 2;
+        cert.claim_interest(half_withdrawal).unwrap();
         let available_after_withdrawal = cert.calculate_available_interest(after_30_days).unwrap();
-        assert_eq!(available_after_withdrawal, 0);
+        assert_eq!(available_after_withdrawal, _available_after_30 - half_withdrawal);
         
         // After more time passes, check interest accumulation
         let after_60_days = cert.purchase_time + 60 * TICKS_PER_DAY;
@@ -435,9 +435,9 @@ mod tests {
         )
     }
 
-    fn validate_product_type_params(duration_days: u64, apy: u64, min_amount: u64) -> bool {
-        duration_days > 0 
-            && duration_days <= crate::certificate::MAX_CERTIFICATE_DURATION_DAYS
+    fn validate_product_type_params(duration_ticks: u64, apy: u64, min_amount: u64) -> bool {
+        duration_ticks > 0 
+            && duration_ticks <= crate::certificate::MAX_CERTIFICATE_DURATION_TICKS
             && apy <= crate::certificate::MAX_APY_BASIS_POINTS
             && min_amount >= crate::certificate::MIN_CERTIFICATE_AMOUNT
             && min_amount <= crate::certificate::MAX_CERTIFICATE_AMOUNT
@@ -448,8 +448,8 @@ mod tests {
             && amount <= crate::certificate::MAX_CERTIFICATE_AMOUNT
     }
 
-    fn calculate_certificate_maturity(purchase_time: u64, duration_days: u64) -> u64 {
-        purchase_time + duration_days * TICKS_PER_DAY
+    fn calculate_certificate_maturity(purchase_time: u64, duration_ticks: u64) -> u64 {
+        purchase_time + duration_ticks
     }
 }
 

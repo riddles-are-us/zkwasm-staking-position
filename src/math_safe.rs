@@ -1,7 +1,6 @@
 use crate::error::*;
 
 /// Staking-specific mathematical functions
-
 /// Safe addition with overflow check
 pub fn safe_add(a: u64, b: u64) -> Result<u64, u32> {
     a.checked_add(b).ok_or(ERROR_OVERFLOW)

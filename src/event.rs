@@ -230,13 +230,7 @@ pub fn emit_interest_claim_event(
     amount: u64,
     counter: u64
 ) {
-    let mut data = Vec::new();
-    data.push(user_id[0]);
-    data.push(user_id[1]);
-    data.push(certificate_id);
-    data.push(amount);
-    data.push(counter); // Use counter as txid
-    data.push(counter); // timestamp
+    let mut data = vec![user_id[0], user_id[1], certificate_id, amount, counter, counter];
     
     insert_event(EVENT_INTEREST_CLAIMED, &mut data);
 }
@@ -248,13 +242,7 @@ pub fn emit_principal_redemption_event(
     amount: u64,
     counter: u64
 ) {
-    let mut data = Vec::new();
-    data.push(user_id[0]);
-    data.push(user_id[1]);
-    data.push(certificate_id);
-    data.push(amount);
-    data.push(counter); // Use counter as txid
-    data.push(counter); // timestamp
+    let mut data = vec![user_id[0], user_id[1], certificate_id, amount, counter, counter];
     
     insert_event(EVENT_PRINCIPAL_REDEEMED, &mut data);
 }

@@ -35,6 +35,12 @@ pub struct GlobalState {
     pub total_recharge_amount: u64,  // Total amount recharged via product 0
 }
 
+impl Default for GlobalState {
+    fn default() -> Self {
+        Self::new()
+    }
+}
+
 impl GlobalState {
     pub fn new() -> Self {
         GlobalState {
@@ -79,9 +85,9 @@ impl GlobalState {
         let withdraw_size = crate::settlement::SettlementInfo::settlement_size();
         if counter % 600 == 0 || txsize >= 40 || withdraw_size > 40 {
             state.txsize = 0;
-            return true;
+            true
         } else {
-            return false;
+            false
         }
     }
 
@@ -224,14 +230,14 @@ impl Transaction {
                 data: [params[1], params[2], params[4]]
             })
         } else if command == CREATE_PRODUCT_TYPE {
-            enforce(params.len() == 5, "create_product_type needs 5 params");
+            enforce(params.len() == 6, "create_product_type needs 6 params");
             Command::CreateProductType(CreateProductType {
-                data: [params[2], params[3], params[4]] // [duration_days, apy, min_amount]
+                data: [params[2], params[3], params[4], params[5]] // [duration_ticks, apy, min_amount, is_active]
             })
         } else if command == MODIFY_PRODUCT_TYPE {
-            enforce(params.len() == 6, "modify_product_type needs 6 params");
+            enforce(params.len() == 7, "modify_product_type needs 7 params");
             Command::ModifyProductType(ModifyProductType {
-                data: [params[2], params[3], params[4], params[5]] // [product_type_id, new_apy, new_duration, new_min_amount]
+                data: [params[2], params[3], params[4], params[5], params[6]] // [product_type_id, new_apy, new_duration, new_min_amount, is_active]
             })
         } else if command == PURCHASE_CERTIFICATE {
             enforce(params.len() == 4, "purchase_certificate needs 4 params");
@@ -239,14 +245,13 @@ impl Transaction {
                 data: [params[2], params[3]] // [product_type_id, amount]
             })
         } else if command == CLAIM_INTEREST {
-            enforce(params.len() == 3, "claim_interest needs 3 params");
-            // params[1] = certificate_id, params[2] = amount
+            enforce(params.len() == 2, "claim_interest needs 2 params");
+            // params[1] = certificate_id
             Command::ClaimInterest(ClaimInterest {
-                certificate_id: params[1],
-                amount: params[2]
+                certificate_id: params[1]
             })
         } else if command == REDEEM_PRINCIPAL {
-            enforce(params.len() == 3, "redeem_principal needs 3 params");
+            enforce(params.len() == 2, "redeem_principal needs 2 params");
             // params[1] = certificate_id
             Command::RedeemPrincipal(RedeemPrincipal {
                 certificate_id: params[1]
