@@ -69,6 +69,8 @@ impl StorageData for PlayerData {
     }
 }
 
+pub type StakingPlayer = zkwasm_rest_abi::Player<PlayerData>; 
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -165,5 +167,3 @@ mod tests {
         assert_eq!(result2.unwrap_err(), ERROR_OVERFLOW);
     }
 }
-
-pub type StakingPlayer = zkwasm_rest_abi::Player<PlayerData>; 

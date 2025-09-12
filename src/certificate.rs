@@ -232,10 +232,6 @@ impl Certificate {
         Ok(())
     }
     
-    /// Get principal value (always the original amount)
-    pub fn get_principal_value(&self) -> u64 {
-        self.principal
-    }
 }
 
 #[cfg(test)]

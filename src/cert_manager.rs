@@ -1,4 +1,4 @@
-use crate::certificate::{ProductType, Certificate, CertificateStatus};
+use crate::certificate::{ProductType, Certificate};
 use crate::state::GLOBAL_STATE;
 use crate::error::*;
 use zkwasm_rest_abi::{StorageData, MERKLE_MAP};
@@ -108,16 +108,6 @@ impl ProductTypeManager {
         product_type.is_active = is_active;
         
         // Store updated product type
-        Self::store_product_type(&product_type);
-        Ok(())
-    }
-    
-    /// Set product type active status
-    pub fn set_product_type_status(product_type_id: u64, is_active: bool) -> Result<(), u32> {
-        let mut product_type = Self::get_product_type(product_type_id)
-            .ok_or(ERROR_PRODUCT_TYPE_NOT_EXIST)?;
-        
-        product_type.is_active = is_active;
         Self::store_product_type(&product_type);
         Ok(())
     }
@@ -260,9 +250,26 @@ pub struct CertificateInfo {
 
 #[cfg(test)]
 mod tests {
-    use super::*;
-    use crate::certificate::Certificate;
+    use crate::certificate::{Certificate, CertificateStatus};
     use crate::config::TICKS_PER_DAY;
+
+    // Extension trait for certificate testing
+    trait CertificateTestExt {
+        fn update_status_for_time(&mut self, current_time: u64);
+        fn can_redeem_at_time(&self, current_time: u64) -> bool;
+    }
+
+    impl CertificateTestExt for Certificate {
+        fn update_status_for_time(&mut self, current_time: u64) {
+            if current_time >= self.maturity_time && !matches!(self.status, CertificateStatus::Redeemed) {
+                self.status = CertificateStatus::Matured;
+            }
+        }
+
+        fn can_redeem_at_time(&self, current_time: u64) -> bool {
+            current_time >= self.maturity_time && !matches!(self.status, CertificateStatus::Redeemed)
+        }
+    }
 
     #[test]
     fn test_product_type_creation_logic() {
@@ -453,21 +460,3 @@ mod tests {
     }
 }
 
-// Extension trait for certificate testing
-#[allow(dead_code)]
-trait CertificateTestExt {
-    fn update_status_for_time(&mut self, current_time: u64);
-    fn can_redeem_at_time(&self, current_time: u64) -> bool;
-}
-
-impl CertificateTestExt for Certificate {
-    fn update_status_for_time(&mut self, current_time: u64) {
-        if current_time >= self.maturity_time && !matches!(self.status, CertificateStatus::Redeemed) {
-            self.status = CertificateStatus::Matured;
-        }
-    }
-
-    fn can_redeem_at_time(&self, current_time: u64) -> bool {
-        current_time >= self.maturity_time && !matches!(self.status, CertificateStatus::Redeemed)
-    }
-}
