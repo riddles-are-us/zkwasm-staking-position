@@ -309,6 +309,24 @@ Certificate A continues until 180-day maturity
 - **Payment Method**: On-demand claims to idle funds
 - **No External Funding**: Interest paid from internal fund management
 
+### Fund Flow Impact by Operation
+
+| 操作 | total_funds | total_recharge | cumulative_admin | 用户idle_funds | 证书本金 |
+|------|-------------|----------------|------------------|----------------|----------|
+| 存款 | +amount | 0 | 0 | +amount | 0 |
+| 证书购买(普通) | 0 | 0 | 0 | -amount | +amount |
+| 证书购买(回充) | -amount | +amount | 0 | -amount | +amount |
+| 利息索取 | 0 | 0 | 0 | +interest | 0 |
+| 本金赎回 | 0 | 0 | 0 | +principal | -principal |
+| 用户提现 | -amount | 0 | 0 | -amount | 0 |
+| 管理员提现 | 0 | 0 | +amount | 0 | 0 |
+
+**Fund Conservation Formula:**
+```
+系统实际资金 = Σ(所有用户idle_funds) + Σ(所有证书本金)
+统计资金总额 = total_funds + total_recharge_amount - cumulative_admin_withdrawals
+```
+
 ## 🔧 Configuration Constants
 
 ### Certificate Limits
