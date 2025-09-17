@@ -195,7 +195,7 @@ class StakingTestPlayer extends PlayerConvention {
     async purchaseCertificate(productTypeId: bigint, amount: bigint) {
         try {
             let nonce = await this.getNonce();
-            let cmd = createCommand(nonce, BigInt(PURCHASE_CERTIFICATE), [0n, productTypeId, amount]);
+            let cmd = createCommand(nonce, BigInt(PURCHASE_CERTIFICATE), [productTypeId, amount]);
             console.log(`User purchasing certificate: product type ${productTypeId}, amount ${amount}`);
             return await this.sendTransactionWithCommand(cmd);
         } catch (error) {
@@ -257,10 +257,9 @@ class StakingAdmin extends StakingTestPlayer {
     async depositForUser(userPid: bigint[], amount: bigint) {
         try {
             let nonce = await this.getNonce();
-            // Deposit command needs 5 params: [nonce_and_command, userPid[0], userPid[1], 0, amount]
-            // The actual data array in Rust will be [params[1], params[2], params[4]] = [userPid[0], userPid[1], amount]
-            // params[3] must be 0 (token index check)
-            let cmd = createCommand(nonce, BigInt(DEPOSIT), [userPid[0], userPid[1], 0n, amount]);
+            // Deposit command needs 4 params: [nonce_and_command, userPid[0], userPid[1], amount]
+            // The actual data array in Rust will be [params[1], params[2], params[3]] = [userPid[0], userPid[1], amount]
+            let cmd = createCommand(nonce, BigInt(DEPOSIT), [userPid[0], userPid[1], amount]);
             console.log(`Admin depositing ${amount} for user [${userPid[0]}, ${userPid[1]}]`);
             return await this.sendTransactionWithCommand(cmd);
         } catch (error) {
@@ -273,7 +272,7 @@ class StakingAdmin extends StakingTestPlayer {
     async createProductType(durationTicks: bigint, apy: bigint, minAmount: bigint, isActive: boolean = true) {
         try {
             let nonce = await this.getNonce();
-            let cmd = createCommand(nonce, BigInt(CREATE_PRODUCT_TYPE), [0n, durationTicks, apy, minAmount, isActive ? 1n : 0n]);
+            let cmd = createCommand(nonce, BigInt(CREATE_PRODUCT_TYPE), [durationTicks, apy, minAmount, isActive ? 1n : 0n]);
             console.log(`Admin creating product type: ${durationTicks} ticks, ${apy} APY, ${minAmount} min amount, active=${isActive}`);
             return await this.sendTransactionWithCommand(cmd);
         } catch (error) {
@@ -285,7 +284,7 @@ class StakingAdmin extends StakingTestPlayer {
     async modifyProductType(productTypeId: bigint, newApy: bigint, newDurationTicks: bigint, newMinAmount: bigint, isActive: boolean) {
         try {
             let nonce = await this.getNonce();
-            let cmd = createCommand(nonce, BigInt(MODIFY_PRODUCT_TYPE), [0n, productTypeId, newApy, newDurationTicks, newMinAmount, isActive ? 1n : 0n]);
+            let cmd = createCommand(nonce, BigInt(MODIFY_PRODUCT_TYPE), [productTypeId, newApy, newDurationTicks, newMinAmount, isActive ? 1n : 0n]);
             console.log(`Admin modifying product type ${productTypeId}: APY=${newApy}, duration=${newDurationTicks} ticks, minAmount=${newMinAmount}, active=${isActive}`);
             console.log("Note: Pass current values to keep fields unchanged");
             return await this.sendTransactionWithCommand(cmd);

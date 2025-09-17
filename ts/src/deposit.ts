@@ -43,7 +43,7 @@ class LaunchpadAdmin extends PlayerConvention {
 
     async depositUsdt(amount: bigint, targetPid1: bigint, targetPid2: bigint) {
         let nonce = await this.getNonce();
-        let cmd = createCommand(nonce, BigInt(DEPOSIT_USDT), [targetPid1, targetPid2, 0n, amount]);
+        let cmd = createCommand(nonce, BigInt(DEPOSIT_USDT), [targetPid1, targetPid2, amount]);
         return await this.sendTransactionWithCommand(cmd);
     }
 }
