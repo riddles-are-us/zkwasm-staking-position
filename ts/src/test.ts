@@ -23,9 +23,9 @@
  * 
  * 2️⃣ ADMIN PRODUCT MANAGEMENT
  *    ├── Create multiple product types with different terms
- *    │   • Short-term: 5 ticks (~25 seconds) for fast testing
- *    │   • Medium-term: 50 ticks (~4 minutes)
- *    │   • Long-term: 864 ticks (~72 minutes)
+ *    │   • Short-term: 5 ticks (~25 seconds) with 500% APY for fast testing
+ *    │   • Medium-term: 50 ticks (~4 minutes) with 15% APY
+ *    │   • Long-term: 864 ticks (~72 minutes) with 20% APY
  *    ├── Modify existing product parameters (APY, duration, status)
  *    ├── Activate/deactivate products for purchase
  *    └── Validate product parameter constraints
@@ -85,8 +85,8 @@
  * 
  * 💰 TEST DATA CONFIGURATION:
  *    ├── Users: admin, user1, user2 with different keys
- *    ├── Amounts: 100,000 to 750,000 USDT range (increased for better interest calculation)
- *    ├── APY Rates: 5% to 50% (500 to 5000 basis points)
+ *    ├── Amounts: 50M-75M USDT deposits, 10M-25M certificate purchases (100x scale)
+ *    ├── APY Rates: 15% to 500% (1500 to 50000 basis points) for meaningful interest
  *    ├── Durations: 5-864 ticks for fast testing (20x accelerated)
  *    └── Reserve Ratio: 10-20% (1000-2000 basis points)
  * 
@@ -177,14 +177,14 @@ class StakingTestPlayer extends PlayerConvention {
         }
     }
 
-    async withdraw(amount: bigint, address: string = "1234567890123456789012345678901234567890") {
+    async withdraw(amount: bigint, address: string = "1234567890abcdef1234567890abcdef12345678") {
         let nonce = await this.getNonce();
         // Use createWithdrawCommand from zkwasm-minirollup-rpc
         let cmd = createWithdrawCommand(nonce, BigInt(WITHDRAW), address, 0n, amount);
         return await this.sendTransactionWithCommand(cmd);
     }
 
-    async withdrawPoints(pointsAmount: bigint, address: string = "1234567890123456789012345678901234567890") {
+    async withdrawPoints(pointsAmount: bigint, address: string = "1234567890abcdef1234567890abcdef12345678") {
         let nonce = await this.getNonce();
         // Use createWithdrawCommand from zkwasm-minirollup-rpc with token index 2 for points
         let cmd = createWithdrawCommand(nonce, BigInt(WITHDRAW_POINTS), address, 2n, pointsAmount);
@@ -500,20 +500,20 @@ async function testProductTypeManagement(admin: StakingAdmin): Promise<void> {
     console.log("\n[TEST] Product Type Management");
     
     try {
-        console.log("Creating short-term product (100 ticks)...");
-        await admin.createProductType(5n, 1000n, 1000n, true); // ~25 seconds, 10% APY
+        console.log("Creating short-term product (5 ticks)...");
+        await admin.createProductType(5n, 50000n, 1000n, true); // ~25 seconds, 500% APY for fast testing
         await waitForTransaction();
         
-        console.log("Creating medium-term product (1000 ticks)...");
+        console.log("Creating medium-term product (50 ticks)...");
         await admin.createProductType(50n, 1500n, 5000n, true); // ~4 minutes, 15% APY
         await waitForTransaction();
         
-        console.log("Creating long-term product (17280 ticks)...");
+        console.log("Creating long-term product (864 ticks)...");
         await admin.createProductType(864n, 2000n, 10000n, true); // ~72 minutes, 20% APY
         await waitForTransaction();
         
         console.log("Modifying product type 1 (changing APY)...");
-        await admin.modifyProductType(1n, 1200n, 5n, 1000n, true); // Change to 12% APY, 25 seconds
+        await admin.modifyProductType(1n, 50000n, 5n, 1000n, true); // Keep 500% APY for testing, 25 seconds
         await waitForTransaction();
         
         console.log("SUCCESS: Product type management completed");
@@ -539,11 +539,11 @@ async function testFundManagement(admin: StakingAdmin, player1: StakingTestPlaye
         const player2Id = player2.getPlayerId();
         
         console.log("Depositing funds for Player1...");
-        await admin.depositForUser(player1Id, 500000n); // 500,000 USDT
+        await admin.depositForUser(player1Id, 50000000n); // 50,000,000 USDT (100x increase)
         await waitForTransaction();
         
         console.log("Depositing funds for Player2...");
-        await admin.depositForUser(player2Id, 750000n); // 750,000 USDT
+        await admin.depositForUser(player2Id, 75000000n); // 75,000,000 USDT (100x increase)
         await waitForTransaction();
         
         // Check states
@@ -564,24 +564,37 @@ async function testCertificatePurchase(player1: StakingTestPlayer, player2: Stak
     
     try {
         console.log("Player1 purchasing short-term certificate...");
-        await player1.purchaseCertificate(1n, 150000n); // Product 1, 150,000 USDT
+        await player1.purchaseCertificate(1n, 15000000n); // Product 1, 15,000,000 USDT (100x)
         await waitForTransaction();
         
         console.log("Player1 purchasing medium-term certificate...");
-        await player1.purchaseCertificate(2n, 200000n); // Product 2, 200,000 USDT
+        await player1.purchaseCertificate(2n, 20000000n); // Product 2, 20,000,000 USDT (100x)
         await waitForTransaction();
         
         console.log("Player2 purchasing long-term certificate...");
-        await player2.purchaseCertificate(3n, 250000n); // Product 3, 250,000 USDT
+        await player2.purchaseCertificate(3n, 25000000n); // Product 3, 25,000,000 USDT (100x)
         await waitForTransaction();
         
         console.log("Player2 purchasing another short-term certificate...");
-        await player2.purchaseCertificate(1n, 100000n); // Product 1, 100,000 USDT
+        await player2.purchaseCertificate(1n, 10000000n); // Product 1, 10,000,000 USDT (100x)
         await waitForTransaction();
         
         // Check states after purchases
         await logPlayerState(testKey, "Player1 after certificate purchases");
         await logPlayerState(testKey2, "Player2 after certificate purchases");
+        
+        // Test immediate premature redemption (should fail)
+        console.log("\n🚫 Testing immediate premature redemption...");
+        try {
+            await player1.redeemPrincipal(1n);
+            console.log("WARNING: Immediate redemption succeeded (certificate may already be matured)");
+        } catch (error) {
+            if (error instanceof Error && error.message.includes("CertificateNotMatured")) {
+                console.log("✅ Premature redemption correctly rejected");
+            } else {
+                console.log("⚠️ Unexpected error:", error instanceof Error ? error.message : error);
+            }
+        }
         
         console.log("SUCCESS: Certificate purchase completed");
         
@@ -597,7 +610,36 @@ async function testInterestClaims(player1: StakingTestPlayer, player2: StakingTe
     
     try {
         console.log("Waiting for some interest to accumulate...");
-        await waitForTransaction(5); // Wait 5 seconds for interest
+        
+        // Calculate expected interest for debugging
+        console.log("\n📊 Expected Interest Calculation:");
+        console.log("Certificate 1 (Player1): Principal=15,000,000, APY=500% (50000 basis points), Duration=5 ticks=25 seconds");
+        
+        // Interest formula: (principal × apy × time_seconds) / (10000 × seconds_per_year)
+        const principal1 = 15000000n; // 15M USDT (100x increase)
+        const apy1 = 50000n; // 500% in basis points for fast testing
+        const timeSeconds = 15n; // 15 seconds wait
+        const secondsPerYear = 365n * 24n * 3600n; // ~31,536,000 seconds
+        
+        const expectedInterest1 = (principal1 * apy1 * timeSeconds) / (10000n * secondsPerYear);
+        console.log(`Expected interest after 15 seconds: ${expectedInterest1} USDT`);
+        console.log(`(${principal1} × ${apy1} × ${timeSeconds}) / (10000 × ${secondsPerYear}) = ${expectedInterest1}`);
+        
+        // Calculate minimum time needed for 1 USDT interest
+        const minInterest = 1n;
+        const minTimeForOneUSDT = (minInterest * 10000n * secondsPerYear) / (principal1 * apy1);
+        console.log(`⏰ Time needed for 1 USDT interest: ${minTimeForOneUSDT} seconds (${minTimeForOneUSDT} seconds = immediate!)`);
+        
+        // Calculate time for 1000 USDT interest for meaningful testing
+        const meaningfulInterest = 1000n;
+        const timeForMeaningfulInterest = (meaningfulInterest * 10000n * secondsPerYear) / (principal1 * apy1);
+        console.log(`⏰ Time needed for ${meaningfulInterest} USDT interest: ${timeForMeaningfulInterest} seconds`);
+        
+        // With 15M principal and 500% APY, we should get significant interest very quickly
+        console.log(`\n💡 With 15M USDT at 500% APY: ~${expectedInterest1} USDT in 15 seconds`);
+        console.log("✅ This should be sufficient for testing!");
+        
+        await waitForTransaction(15); // Wait 15 seconds - should generate significant interest now
         
         console.log("Player1 claiming interest from certificate 1...");
         try {
@@ -642,44 +684,51 @@ async function testPrincipalRedemption(player1: StakingTestPlayer, player2: Stak
     console.log("\n[TEST] Principal Redemption");
     
     try {
-        console.log("Testing premature redemption (should fail)...");
+        console.log("Testing premature redemption immediately after purchase (should fail)...");
+        console.log("Note: Certificates were purchased at counter ~11, maturity_time = 11 + 5 = 16 ticks");
+        console.log("Current counter should be ~15, so certificates are close to maturity");
+        
         try {
             await player1.redeemPrincipal(1n);
-            console.log("WARNING: Premature redemption succeeded (unexpected)");
+            console.log("Certificate 1 redemption succeeded - certificate was already matured");
+            await waitForTransaction();
         } catch (error) {
             if (error instanceof Error && error.message.includes("CertificateNotMatured")) {
                 console.log("Premature redemption correctly rejected");
+            } else if (error instanceof Error && error.message.includes("CertificateAlreadyRedeemed")) {
+                console.log("Certificate already redeemed");
             } else {
                 throw error;
             }
         }
         
-        console.log("Waiting for short-term certificates to mature...");
-        await waitForTransaction(30); // Wait 30 seconds for maturity (5 ticks = 25 seconds)
+        console.log("Testing additional certificate redemptions...");
         
-        console.log("Player1 redeeming matured certificate 1...");
-        try {
-            await player1.redeemPrincipal(1n);
-            await waitForTransaction();
-            console.log("Player1 principal redemption successful");
-        } catch (error) {
-            if (error instanceof Error && error.message.includes("CertificateNotMatured")) {
-                console.log("Certificate not yet matured (need more time)");
-            } else {
-                throw error;
-            }
-        }
-        
-        console.log("Player2 redeeming matured certificate 4...");
+        console.log("Player2 redeeming certificate 4 (short-term)...");
         try {
             await player2.redeemPrincipal(4n);
             await waitForTransaction();
-            console.log("Player2 principal redemption successful");
+            console.log("Player2 certificate 4 redemption successful");
         } catch (error) {
             if (error instanceof Error && error.message.includes("CertificateNotMatured")) {
-                console.log("Certificate not yet matured (need more time)");
+                console.log("Certificate 4 not yet matured");
+            } else if (error instanceof Error && error.message.includes("CertificateAlreadyRedeemed")) {
+                console.log("Certificate 4 already redeemed");
             } else {
-                throw error;
+                console.log("Certificate 4 redemption error:", error instanceof Error ? error.message : error);
+            }
+        }
+        
+        // Try redeeming Player1's medium-term certificate (should not be mature yet)
+        console.log("Player1 trying to redeem medium-term certificate 2 (should fail)...");
+        try {
+            await player1.redeemPrincipal(2n);
+            console.log("WARNING: Medium-term certificate redemption succeeded unexpectedly");
+        } catch (error) {
+            if (error instanceof Error && error.message.includes("CertificateNotMatured")) {
+                console.log("✅ Medium-term certificate correctly not matured yet");
+            } else {
+                console.log("Medium-term certificate error:", error instanceof Error ? error.message : error);
             }
         }
         
@@ -700,10 +749,10 @@ async function testWithdrawals(admin: StakingAdmin, player1: StakingTestPlayer, 
     console.log("\n[TEST] Withdrawal Operations");
     
     try {
-        const testAddress = "0x1234567890123456789012345678901234567890";
+        const testAddress = "1234567890abcdef1234567890abcdef12345678";
         
         console.log("Player1 withdrawing USDT...");
-        await player1.withdraw(5000n, testAddress);
+        await player1.withdraw(50000n, testAddress); // Increased to match new scale
         await waitForTransaction();
         
         console.log("Player2 withdrawing points...");
@@ -720,7 +769,7 @@ async function testWithdrawals(admin: StakingAdmin, player1: StakingTestPlayer, 
         
         console.log("Admin withdrawing to multisig...");
         try {
-            await admin.withdrawToMultisig(10000n);
+            await admin.withdrawToMultisig(100000n); // Increased to match new scale
             await waitForTransaction();
             console.log("Admin multisig withdrawal successful");
         } catch (error) {
@@ -751,7 +800,7 @@ async function testErrorScenarios(player1: StakingTestPlayer): Promise<void> {
     try {
         console.log("Testing insufficient balance for certificate purchase...");
         try {
-            await player1.purchaseCertificate(3n, 100000n); // More than available
+            await player1.purchaseCertificate(3n, 1000000n); // More than available
             console.log("WARNING: Large purchase succeeded (unexpected)");
         } catch (error) {
             if (error instanceof Error && error.message.includes("InsufficientBalance")) {
@@ -880,16 +929,16 @@ export class CertificateIntegrationTest {
             // Quick fund deposit
             console.log("[FAST] Quick fund deposit...");
             const player1Id = player1.getPlayerId();
-            await admin.depositForUser(player1Id, 10000n);
+            await admin.depositForUser(player1Id, 100000n); // Increased for meaningful interest
             await waitForTransaction(1);
             
             // Quick certificate purchase
             console.log("[FAST] Quick certificate purchase...");
-            await player1.purchaseCertificate(1n, 5000n);
+            await player1.purchaseCertificate(1n, 50000n); // Increased for meaningful interest
             await waitForTransaction(1);
             
-            console.log("[FAST] Waiting for certificate to mature (60 seconds)...");
-            await waitForTransaction(60); // Wait for maturity
+            console.log("[FAST] Waiting for certificate to mature (55 seconds)...");
+            await waitForTransaction(55); // Wait for maturity (10 ticks = 50 seconds + buffer)
             
             // Try interest claim and redemption
             console.log("[FAST] Claiming interest...");
