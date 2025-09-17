@@ -224,25 +224,24 @@ impl Transaction {
                 data: [params[2], params[3], params[4]]
             })
         } else if command == DEPOSIT {
-            enforce(params.len() == 5, "deposit needs 5 params");
-            enforce(params[3] == 0, "check deposit index"); // only token index 0 is supported
+            enforce(params.len() == 4, "deposit needs 4 params");
             Command::Deposit(Deposit {
-                data: [params[1], params[2], params[4]] // [userPid[0], userPid[1], amount]
+                data: [params[1], params[2], params[3]] // [userPid[0], userPid[1], amount]
             })
         } else if command == CREATE_PRODUCT_TYPE {
-            enforce(params.len() == 6, "create_product_type needs 6 params");
+            enforce(params.len() == 5, "create_product_type needs 5 params");
             Command::CreateProductType(CreateProductType {
-                data: [params[2], params[3], params[4], params[5]] // [duration_ticks, apy, min_amount, is_active]
+                data: [params[1], params[2], params[3], params[4]] // [duration_ticks, apy, min_amount, is_active]
             })
         } else if command == MODIFY_PRODUCT_TYPE {
-            enforce(params.len() == 7, "modify_product_type needs 7 params");
+            enforce(params.len() == 6, "modify_product_type needs 6 params");
             Command::ModifyProductType(ModifyProductType {
-                data: [params[2], params[3], params[4], params[5], params[6]] // [product_type_id, new_apy, new_duration, new_min_amount, is_active]
+                data: [params[1], params[2], params[3], params[4], params[5]] // [product_type_id, new_apy, new_duration, new_min_amount, is_active]
             })
         } else if command == PURCHASE_CERTIFICATE {
-            enforce(params.len() == 4, "purchase_certificate needs 4 params");
+            enforce(params.len() == 3, "purchase_certificate needs 3 params");
             Command::PurchaseCertificate(PurchaseCertificate {
-                data: [params[2], params[3]] // [product_type_id, amount]
+                data: [params[1], params[2]] // [product_type_id, amount]
             })
         } else if command == CLAIM_INTEREST {
             enforce(params.len() == 2, "claim_interest needs 2 params");
