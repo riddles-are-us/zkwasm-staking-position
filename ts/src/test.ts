@@ -195,7 +195,7 @@ class StakingTestPlayer extends PlayerConvention {
     async purchaseCertificate(productTypeId: bigint, amount: bigint) {
         try {
             let nonce = await this.getNonce();
-            let cmd = createCommand(nonce, BigInt(PURCHASE_CERTIFICATE), [productTypeId, amount]);
+            let cmd = createCommand(nonce, BigInt(PURCHASE_CERTIFICATE), [0n, productTypeId, amount]);
             console.log(`User purchasing certificate: product type ${productTypeId}, amount ${amount}`);
             return await this.sendTransactionWithCommand(cmd);
         } catch (error) {
@@ -273,7 +273,7 @@ class StakingAdmin extends StakingTestPlayer {
     async createProductType(durationTicks: bigint, apy: bigint, minAmount: bigint, isActive: boolean = true) {
         try {
             let nonce = await this.getNonce();
-            let cmd = createCommand(nonce, BigInt(CREATE_PRODUCT_TYPE), [durationTicks, apy, minAmount, isActive ? 1n : 0n]);
+            let cmd = createCommand(nonce, BigInt(CREATE_PRODUCT_TYPE), [0n, durationTicks, apy, minAmount, isActive ? 1n : 0n]);
             console.log(`Admin creating product type: ${durationTicks} ticks, ${apy} APY, ${minAmount} min amount, active=${isActive}`);
             return await this.sendTransactionWithCommand(cmd);
         } catch (error) {
@@ -285,7 +285,7 @@ class StakingAdmin extends StakingTestPlayer {
     async modifyProductType(productTypeId: bigint, newApy: bigint, newDurationTicks: bigint, newMinAmount: bigint, isActive: boolean) {
         try {
             let nonce = await this.getNonce();
-            let cmd = createCommand(nonce, BigInt(MODIFY_PRODUCT_TYPE), [productTypeId, newApy, newDurationTicks, newMinAmount, isActive ? 1n : 0n]);
+            let cmd = createCommand(nonce, BigInt(MODIFY_PRODUCT_TYPE), [0n, productTypeId, newApy, newDurationTicks, newMinAmount, isActive ? 1n : 0n]);
             console.log(`Admin modifying product type ${productTypeId}: APY=${newApy}, duration=${newDurationTicks} ticks, minAmount=${newMinAmount}, active=${isActive}`);
             console.log("Note: Pass current values to keep fields unchanged");
             return await this.sendTransactionWithCommand(cmd);
@@ -934,27 +934,29 @@ export {
 
 // Run tests if this file is executed directly
 if (import.meta.url === `file://${process.argv[1]}`) {
-    // Default to running all tests
-    const testType = process.argv[2];
-    
-    console.log("📋 Available test modes:");
-    console.log("  • full    - Complete end-to-end workflow (default)");
-    console.log("  • basic   - Basic setup and connection tests");
-    console.log("  • fast    - Quick validation with minimal waiting");
-    console.log();
-    
-    switch(testType) {
-        case 'basic':
-            console.log("Running basic tests...\n");
-            CertificateIntegrationTest.runBasicTests();
-            break;
-        case 'fast':
-            console.log("Running fast tests...\n");
-            CertificateIntegrationTest.runFastTests();
-            break;
-        case 'full':
-        default:
-            console.log("Running full end-to-end tests...\n");
-            CertificateIntegrationTest.runAllTests();
-    }
+    (async () => {
+        // Default to running all tests
+        const testType = process.argv[2];
+        
+        console.log("📋 Available test modes:");
+        console.log("  • full    - Complete end-to-end workflow (default)");
+        console.log("  • basic   - Basic setup and connection tests");
+        console.log("  • fast    - Quick validation with minimal waiting");
+        console.log();
+        
+        switch(testType) {
+            case 'basic':
+                console.log("Running basic tests...\n");
+                await CertificateIntegrationTest.runBasicTests();
+                break;
+            case 'fast':
+                console.log("Running fast tests...\n");
+                await CertificateIntegrationTest.runFastTests();
+                break;
+            case 'full':
+            default:
+                console.log("Running full end-to-end tests...\n");
+                await CertificateIntegrationTest.runAllTests();
+        }
+    })();
 }

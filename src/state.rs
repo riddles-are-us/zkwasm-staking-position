@@ -227,7 +227,7 @@ impl Transaction {
             enforce(params.len() == 5, "deposit needs 5 params");
             enforce(params[3] == 0, "check deposit index"); // only token index 0 is supported
             Command::Deposit(Deposit {
-                data: [params[1], params[2], params[4]]
+                data: [params[1], params[2], params[4]] // [userPid[0], userPid[1], amount]
             })
         } else if command == CREATE_PRODUCT_TYPE {
             enforce(params.len() == 6, "create_product_type needs 6 params");
