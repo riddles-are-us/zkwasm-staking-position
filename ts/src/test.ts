@@ -23,9 +23,9 @@
  * 
  * 2️⃣ ADMIN PRODUCT MANAGEMENT
  *    ├── Create multiple product types with different terms
- *    │   • Short-term: 100 ticks (~8 minutes) for fast testing
- *    │   • Medium-term: 1000 ticks (~1.4 hours)
- *    │   • Long-term: 17280 ticks (1 day)
+ *    │   • Short-term: 5 ticks (~25 seconds) for fast testing
+ *    │   • Medium-term: 50 ticks (~4 minutes)
+ *    │   • Long-term: 864 ticks (~72 minutes)
  *    ├── Modify existing product parameters (APY, duration, status)
  *    ├── Activate/deactivate products for purchase
  *    └── Validate product parameter constraints
@@ -79,15 +79,15 @@
  * 
  * ⏱️ TIME SYSTEM (for testing efficiency):
  *    • 1 tick = 5 seconds
- *    • 100 ticks = 8.3 minutes (short-term testing)
- *    • 1000 ticks = 83.3 minutes (medium-term testing)
- *    • 17280 ticks = 1 day (standard duration)
+ *    • 5 ticks = 25 seconds (short-term testing)
+ *    • 50 ticks = 4.2 minutes (medium-term testing)
+ *    • 864 ticks = 72 minutes (accelerated long-term)
  * 
  * 💰 TEST DATA CONFIGURATION:
  *    ├── Users: admin, user1, user2 with different keys
- *    ├── Amounts: 1,000 to 100,000 USDT range
+ *    ├── Amounts: 100,000 to 750,000 USDT range (increased for better interest calculation)
  *    ├── APY Rates: 5% to 50% (500 to 5000 basis points)
- *    ├── Durations: 100-17280 ticks for comprehensive coverage
+ *    ├── Durations: 5-864 ticks for fast testing (20x accelerated)
  *    └── Reserve Ratio: 10-20% (1000-2000 basis points)
  * 
  * 🚀 TEST EXECUTION FLOW:
@@ -501,19 +501,19 @@ async function testProductTypeManagement(admin: StakingAdmin): Promise<void> {
     
     try {
         console.log("Creating short-term product (100 ticks)...");
-        await admin.createProductType(100n, 1000n, 1000n, true); // ~8 minutes, 10% APY
+        await admin.createProductType(5n, 1000n, 1000n, true); // ~25 seconds, 10% APY
         await waitForTransaction();
         
         console.log("Creating medium-term product (1000 ticks)...");
-        await admin.createProductType(1000n, 1500n, 5000n, true); // ~1.4 hours, 15% APY
+        await admin.createProductType(50n, 1500n, 5000n, true); // ~4 minutes, 15% APY
         await waitForTransaction();
         
         console.log("Creating long-term product (17280 ticks)...");
-        await admin.createProductType(17280n, 2000n, 10000n, true); // 1 day, 20% APY
+        await admin.createProductType(864n, 2000n, 10000n, true); // ~72 minutes, 20% APY
         await waitForTransaction();
         
         console.log("Modifying product type 1 (changing APY)...");
-        await admin.modifyProductType(1n, 1200n, 100n, 1000n, true); // Change to 12% APY
+        await admin.modifyProductType(1n, 1200n, 5n, 1000n, true); // Change to 12% APY, 25 seconds
         await waitForTransaction();
         
         console.log("SUCCESS: Product type management completed");
@@ -539,11 +539,11 @@ async function testFundManagement(admin: StakingAdmin, player1: StakingTestPlaye
         const player2Id = player2.getPlayerId();
         
         console.log("Depositing funds for Player1...");
-        await admin.depositForUser(player1Id, 50000n); // 50,000 USDT
+        await admin.depositForUser(player1Id, 500000n); // 500,000 USDT
         await waitForTransaction();
         
         console.log("Depositing funds for Player2...");
-        await admin.depositForUser(player2Id, 75000n); // 75,000 USDT
+        await admin.depositForUser(player2Id, 750000n); // 750,000 USDT
         await waitForTransaction();
         
         // Check states
@@ -564,19 +564,19 @@ async function testCertificatePurchase(player1: StakingTestPlayer, player2: Stak
     
     try {
         console.log("Player1 purchasing short-term certificate...");
-        await player1.purchaseCertificate(1n, 15000n); // Product 1, 15,000 USDT
+        await player1.purchaseCertificate(1n, 150000n); // Product 1, 150,000 USDT
         await waitForTransaction();
         
         console.log("Player1 purchasing medium-term certificate...");
-        await player1.purchaseCertificate(2n, 20000n); // Product 2, 20,000 USDT
+        await player1.purchaseCertificate(2n, 200000n); // Product 2, 200,000 USDT
         await waitForTransaction();
         
         console.log("Player2 purchasing long-term certificate...");
-        await player2.purchaseCertificate(3n, 25000n); // Product 3, 25,000 USDT
+        await player2.purchaseCertificate(3n, 250000n); // Product 3, 250,000 USDT
         await waitForTransaction();
         
         console.log("Player2 purchasing another short-term certificate...");
-        await player2.purchaseCertificate(1n, 10000n); // Product 1, 10,000 USDT
+        await player2.purchaseCertificate(1n, 100000n); // Product 1, 100,000 USDT
         await waitForTransaction();
         
         // Check states after purchases
@@ -597,7 +597,7 @@ async function testInterestClaims(player1: StakingTestPlayer, player2: StakingTe
     
     try {
         console.log("Waiting for some interest to accumulate...");
-        await waitForTransaction(10); // Wait 10 seconds for interest
+        await waitForTransaction(5); // Wait 5 seconds for interest
         
         console.log("Player1 claiming interest from certificate 1...");
         try {
@@ -655,7 +655,7 @@ async function testPrincipalRedemption(player1: StakingTestPlayer, player2: Stak
         }
         
         console.log("Waiting for short-term certificates to mature...");
-        await waitForTransaction(15); // Wait additional time for maturity
+        await waitForTransaction(30); // Wait 30 seconds for maturity (5 ticks = 25 seconds)
         
         console.log("Player1 redeeming matured certificate 1...");
         try {
